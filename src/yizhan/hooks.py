@@ -11,7 +11,7 @@ import os
 import sys
 import traceback
 
-from . import adapters, brief, mail, sync, util
+from . import adapters, brief, mail, sync, util, wake
 from . import ledger as ledger_mod
 
 ERROR_LOG_MAX = 1_000_000      # bytes; keep the local error log from growing without end
@@ -66,12 +66,17 @@ def _handle(agent, event, payload):
         return brief.new_mail_notice(led, prof, session, budget)
     if event == "Stop":
         # The turn is over, so this seat's letters are final ("sealed") and may wake others.
+        previous_end = util.parse_iso(prof["presence"].get("sealed_at"))
         mail.touch(led, seat, seal=True)
         if sync.needs_push(led, seat):
             try:
                 sync.sync(led, quick=True, net_timeout=20)
             except util.YizhanError:
                 log_error(f"{agent} Stop sync")
+        try:
+            wake.kick(led, seat, since=previous_end)   # readers on this machine with autowake on
+        except Exception:  # noqa: BLE001
+            log_error(f"{agent} Stop kick")
         return None                                    # Stop takes no context in either host
     return None
 

@@ -187,22 +187,29 @@ def wake_prompt(prof, cmd):
             "没有能推进的事就直接结束，不发空信。")
 
 
-def wake_argv(prof, prompt, last_message_file):
-    """(argv, workdir) for a headless run, or (None, None) when the seat only queues."""
+def wake_argv(prof, prompt, last_message_file, writable=()):
+    """(argv, workdir) for a headless run, or (None, None) when the seat only queues.
+
+    `writable` lists folders outside the work folder that the run must write, such as
+    the ledger and yizhan's state folder: without them a sandboxed agent could read a
+    letter but never answer it."""
     mode = prof.get("wake") or get(prof.get("agent")).default_wake
     if mode == "queue":
         return None, None
     workdir = prof.get("workdir") or (prof.get("paths") or [str(Path.home())])[0]
+    extra = []
+    for d in writable:
+        extra += ["--add-dir", str(d)]
     if prof["agent"] == "codex":
         exe = prof.get("command") or find_codex()
         if not exe:
             raise YizhanError("找不到 codex 命令：登记岗位时用 --command 给出 codex 的完整路径")
-        return [exe, "exec", "--cd", workdir, "-s", "workspace-write",
+        return [exe, "exec", "--cd", workdir, "-s", "workspace-write", *extra,
                 "-o", str(last_message_file), prompt], workdir
     exe = prof.get("command") or shutil.which("claude")
     if not exe:
         raise YizhanError("找不到 claude 命令：登记岗位时用 --command 给出完整路径")
-    return [exe, "-p", prompt], workdir
+    return [exe, "-p", prompt, *extra], workdir
 
 
 def check_command(exe):

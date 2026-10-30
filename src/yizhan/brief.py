@@ -43,21 +43,26 @@ def _runs_on_its_own(path):
     return bool(interpreter) and interpreter[0].startswith(b"/") and interpreter[0] != b"/usr/bin/env"
 
 
-def cli_prefix():
-    """How to call yizhan on this machine, as an absolute command that needs no PATH:
-    an app started from the Dock may run hooks without the shell's PATH, and a script
-    starting with `#!/usr/bin/env python3` would still look python3 up on PATH."""
+def cli_argv():
+    """The arguments that run yizhan on this machine without relying on PATH: an app
+    started from the Dock may run hooks without the shell's PATH, and a script starting
+    with `#!/usr/bin/env python3` would still look python3 up on PATH."""
     found = shutil.which("yizhan")
     if found:
         found = os.path.abspath(found)
         if _runs_on_its_own(found):
-            return _quote(found)
-        return f"{_quote(sys.executable or 'python3')} {_quote(found)}"
+            return [found]
+        return [sys.executable or "python3", found]
     exe = sys.executable or "python3"
     launcher = Path(__file__).resolve().parents[2] / "bin" / "yizhan"
     if launcher.is_file():
-        return f"{_quote(exe)} {_quote(str(launcher))}"
-    return f"{_quote(exe)} -m yizhan"
+        return [exe, str(launcher)]
+    return [exe, "-m", "yizhan"]
+
+
+def cli_prefix():
+    """cli_argv() as one command line for bash, zsh or sh (Git Bash on Windows)."""
+    return " ".join(_quote(a) for a in cli_argv())
 
 
 def roster_lines(ledger, projects=None, me=None, now=None):

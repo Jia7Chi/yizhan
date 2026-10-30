@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import __version__, adapters, brief, gitio, hooks, mail, records, state, sync, util, wake
+from . import __version__, adapters, brief, gitio, hooks, mail, records, service, state, sync, util, wake
 from . import ledger as ledger_mod
 from .ledger import AGENT_KINDS, WAKE_MODES
 from .util import YizhanError
@@ -131,9 +131,13 @@ def cmd_send(ns):
     if not meta["wake"]:
         how = "不叫醒对方，对方下次查信时看"
     else:
-        modes = {(led.seat(t) or {}).get("wake") or adapters.get((led.seat(t) or {}).get("agent", "claude")).default_wake
-                 for t in meta["to"]}
-        how = "待办；对方只排队，下次开会话时看到" if modes == {"queue"} else "待办；唤醒器在跑的话会叫醒对方"
+        auto = [t for t in meta["to"] if (led.seat(t) or {}).get("autowake")]
+        if not auto:
+            how = "待办；对方没开自动叫醒，下次开会话时看到"
+        elif len(auto) == len(meta["to"]):
+            how = "待办；对方开着自动叫醒，信写完就会自己启动处理"
+        else:
+            how = f"待办；{'、'.join(auto)} 开着自动叫醒，其余的下次开会话时看到"
     print(f"已发 {meta['id']} → {'、'.join(meta['to'])}（{how}）")
     if any(t.split("@", 1)[1] != led.machine for t in meta["to"]):
         print("收信方里有别的机器上的岗位：AI 会话这一轮结束时会自动推送；不在会话里发的，跑一下 yizhan sync")
@@ -237,6 +241,85 @@ def cmd_wake(ns):
     return 0
 
 
+def _service_plan(led, prof):
+    """The installed job, found by its name; the interval does not matter for removing or
+    checking it, so a bad saved interval can never block `off` or `status`."""
+    return service.plan(led, prof["address"])
+
+
+def cmd_autowake(ns):
+    led = ledger_mod.open_local()
+    if ns.action == "status":
+        mine = [s for s in led.seats() if s["machine"] == led.machine]
+        if not mine:
+            print("（本机还没有岗位）")
+        today = led.local_date().date().isoformat()
+        for s in mine:
+            if not s.get("autowake"):
+                print(f"- {s['address']}：自动叫醒关着，信只排队，等有人开会话")
+                continue
+            st = state.load(led, f"seat-{s['address']}")
+            used = int(st.get("wakes", {}).get(today, 0))
+            budget = int(s.get("wake_budget_per_day") or led.settings["wake_budget_per_day"])
+            job = ("后台任务在跑" if service.installed(_service_plan(led, s))
+                   else "后台任务没在跑，别的机器来的信要等有人开会话")
+            print(f"- {s['address']}：自动叫醒开着；今天叫醒 {used}/{budget} 次；{job}；"
+                  f"上次叫醒 {led.fmt_time(st.get('last_wake_at'))}")
+            if st.get("last_wake_rc"):
+                print(f"  上次叫醒失败（返回码 {st['last_wake_rc']}），信已放回待办，下次再试：{st.get('last_wake_error', '')}")
+        return 0
+
+    seat = _me(led, ns)
+    prof = led.require_seat(seat, local=True)
+    if ns.action == "off":
+        service.uninstall(_service_plan(led, prof))
+        led.update_seat(seat, autowake=None, autowake_interval=None, wake="queue")
+        print(f"已关掉 {seat} 的自动叫醒，后台任务也删了。之后它的信只排队，等你开会话。")
+        return 0
+
+    if prof["agent"] != "codex":
+        raise YizhanError("暂时只有 Codex 能自动叫醒。Claude 的订阅登录按条款只用于本人正常使用，"
+                          "没人在场时自动启动不合适；有新信时，你在 Claude 会话里说一句话就会收到提示。")
+    exe = prof.get("command") or adapters.find_codex()
+    good, text = adapters.check_command(exe) if exe else (False, "找不到 codex 命令")
+    if not good:
+        raise YizhanError(f"codex 跑不起来（{text}）。用 yizhan seat add {prof['name']} --agent codex "
+                          "--command <codex 的完整路径> 指定一个能用的")
+    workdir = prof.get("workdir") or (prof.get("paths") or [""])[0]
+    if not workdir or not adapters.git_toplevel(workdir):
+        raise YizhanError(f"被叫醒的 Codex 只肯在 git 仓库里干活，而 {workdir or '它的工作文件夹'} 不在 git 仓库里。"
+                          f"用 yizhan seat add {prof['name']} --agent codex --workdir <一个 git 仓库> 指定，"
+                          "或者在那个文件夹里 git init")
+    p = service.plan(led, seat, ns.interval)     # check the interval before anything changes
+    budget = int(ns.budget or prof.get("wake_budget_per_day") or led.settings["wake_budget_per_day"])
+    rounds = led.settings["max_rounds"]
+    print(f"打开以后，{seat} 收到要它动手的信（请求或答复）会自己启动一次 Codex，处理完就退出：")
+    print("- 同一台机器上，发信方这一轮一结束就叫醒；" + (
+        "这次不装后台任务，别的机器来的信要等有人开会话。" if ns.no_service
+        else f"别的机器来的信，由后台任务每 {ns.interval} 秒查一次。"))
+    print(f"- 每叫醒一次就是一次 Codex 运行，用你账号的额度；每天最多 {budget} 次，"
+          f"一条请求往返 {rounds} 轮以后不再自动叫醒，分歧交你裁决。")
+    print("- 被叫醒的 Codex 只能写它的工作文件夹和驿站账本。信里的内容仍然只当参考，"
+          "权限、实机操作、改别人负责的文件只听你本人。")
+    if not ns.yes:
+        if not sys.stdin.isatty():
+            raise YizhanError("确认要打开的话，加上 --yes 再运行一次")
+        if input("确定打开吗？[y/N] ").strip().lower() not in ("y", "yes", "是"):
+            print("没有打开。")
+            return 1
+    led.update_seat(seat, wake="exec", autowake=True, wake_budget_per_day=budget, command=exe,
+                    autowake_interval=int(ns.interval))
+    if not ns.no_service:
+        try:
+            service.install(p)
+        except YizhanError as e:
+            print(f"自动叫醒已打开，但后台任务没装上：{e}。同一台机器上的信照样会立刻叫醒。")
+            return 1
+        print(f"装好了后台任务（{p['kind']}：{p['name']}）。")
+    print(f"已打开 {seat} 的自动叫醒。关掉：yizhan autowake off --as {seat}")
+    return 0
+
+
 def cmd_doctor(ns):
     ok = True
 
@@ -274,6 +357,17 @@ def cmd_doctor(ns):
             exe = s.get("command") or (adapters.find_codex() if s["agent"] == "codex" else None)
             good, text = adapters.check_command(exe) if exe else (False, "找不到命令")
             say(good, f"{s['address']} 叫醒用的命令 {exe}：{text}")
+        if s.get("autowake"):
+            running = service.installed(_service_plan(led, s))
+            say(running, f"{s['address']} 开着自动叫醒；后台任务" + (
+                "在跑" if running else f"没在跑，别的机器来的信要等有人开会话（yizhan autowake on --as {s['address']} 重装）"))
+            workdir = s.get("workdir") or (s.get("paths") or [""])[0]
+            say(bool(adapters.git_toplevel(workdir)) if workdir else False,
+                f"{s['address']} 被叫醒时在 {workdir} 干活" + ("" if workdir and adapters.git_toplevel(workdir)
+                                                           else "，可它不在 git 仓库里，Codex 会拒绝运行"))
+            st = state.load(led, f"seat-{s['address']}")
+            if st.get("last_wake_rc"):
+                say(False, f"{s['address']} 上次叫醒失败（返回码 {st['last_wake_rc']}）：{st.get('last_wake_error', '')}")
     for d, roots in adapters.memory_collisions(mine).items():
         say(False, f"这几个文件夹共用同一个 Claude 记忆目录 {d}：" + "；".join(roots))
         for root in roots:
@@ -428,7 +522,16 @@ def build_parser():
     s.add_argument("--interval", type=float, default=60,
                    help="--watch 时多少秒查一次：按你要的“别的机器来信多快被发现”定")
 
-    add(sub, "doctor", "体检：git、远端、岗位、hook、记忆目录撞车、同步状态", cmd_doctor)
+    s = with_as(add(sub, "autowake", "自动叫醒（默认关着）：on 打开，off 关掉，status 查看", cmd_autowake))
+    s.add_argument("action", choices=("on", "off", "status"))
+    s.add_argument("--interval", type=int, default=service.DEFAULT_INTERVAL_S,
+                   help="后台任务隔多少秒查一次别的机器来的信，按你要的“多快发现”定，最少 60（默认 300）")
+    s.add_argument("--budget", type=int, help="每天最多叫醒几次（默认 12）")
+    s.add_argument("--yes", action="store_true", help="不再问一遍，直接打开")
+    s.add_argument("--no-service", action="store_true",
+                   help="不装后台任务：只在同一台机器上、发信方这一轮结束时叫醒")
+
+    add(sub, "doctor", "体检：git、远端、岗位、hook、自动叫醒、记忆目录撞车、同步状态", cmd_doctor)
     add(sub, "status", "账本概况", cmd_status)
     return p
 

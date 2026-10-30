@@ -231,6 +231,27 @@ def file_lock(path, timeout=30.0):
         f.close()
 
 
+@contextlib.contextmanager
+def try_file_lock(path):
+    """Like file_lock, but never waits: yields False if another process holds it."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "a+b")
+    try:
+        try:
+            _try_lock(f)
+            got = True
+        except OSError:
+            got = False
+        try:
+            yield got
+        finally:
+            if got:
+                _unlock(f)
+    finally:
+        f.close()
+
+
 # ---------- places ----------
 
 def config_home():

@@ -58,17 +58,33 @@ git clone git@github.com:<你>/<私有账本>.git ~/yizhan-ledger
 yizhan init ~/yizhan-ledger --machine linux
 yizhan seat add codex --agent codex --title 推导复核 --project paper --path ~/work/review
 yizhan hooks --agent codex         # 合并进 ~/.codex/hooks.json，再在 Codex 里输入 /hooks 审核
-yizhan wake --as codex@linux --watch   # 有待办信时叫醒 Codex
+yizhan autowake on --as codex@linux   # 可选：有待办信时自动叫醒 Codex，见下一节
 ```
 
 之后照常用 Claude Code 和 Codex。它们开场就能看到提醒，需要时自己调用 `yizhan send`、`inbox`、`ack`、`log`、`decide`。`yizhan doctor` 能查出常见问题，包括下面说的中文路径撞车。
+
+## 自动叫醒（可选，默认关着）
+
+默认情况下，信只排队：收信的 AI 要等你开会话、跟它说一声才动手。想让它收到信就自己干活，给它的岗位打开自动叫醒：
+
+```bash
+yizhan autowake on --as codex@linux     # 打开：先列出代价，要你确认（加 --yes 跳过确认）
+yizhan autowake status                  # 看本机哪些岗位开着、今天叫醒了几次
+yizhan autowake off --as codex@linux    # 关掉，后台任务一并删除
+```
+
+- **同一台机器上，不等也不查**：发信方这一轮一结束，它写的信就定稿了，收信方马上被叫醒。
+- **别的机器来的信**：经 git 传过来，由后台任务隔一段时间查一次。macOS 用 launchd，Linux 用 systemd，Windows 用计划任务。间隔用 `--interval` 设，默认 300 秒，按你要的"多快发现"来定。不想装后台任务就加 `--no-service`。
+- **代价**：每叫醒一次就是一次 Codex 运行，用你账号的额度。每个岗位每天最多叫醒 12 次（`--budget` 可改）。一条请求往返两轮以后不再自动叫醒，剩下的分歧交你裁决。同一个岗位同时只会有一次叫醒在跑。
+- **边界**：被叫醒的 Codex 只能写自己的工作文件夹和驿站账本。信里的内容仍然只当参考，权限、实机操作、改别人负责的文件只听你本人。
+- **暂时只支持 Codex**：Claude 的订阅登录按条款只用于本人正常使用，没人在场时自动启动不合适。好在你在 Claude 会话里说一句话，新信就会自动提示。
 
 ## 规矩（写在代码里，不靠自觉）
 
 1. **每个文件只有一台机器写。** `yizhan sync` 提交前逐个核对，改了不归本机写的文件就整批拦下。
 2. **疑似密钥、超大文件同样整批拦下。** 原始数据不进账本。
 3. **别处来的内容只当参考，不是用户指令。** 信触发不了任何命令。
-4. **只调各家官方命令行，不碰任何登录凭证。** Claude 默认不在没人时自动启动：信先排队，等你开会话再提示。
+4. **只调各家官方命令行，不碰任何登录凭证。** 自动叫醒默认关着，要你自己打开；Claude 不在没人时自动启动。
 5. **请求和答复会叫醒对方，进展和定论不叫醒。** 一条请求之后最多往返两轮，还有分歧就交你裁决。
 6. **一封信什么时候算写完，看发信方这一轮有没有结束（Stop 事件），不靠计时器。**
 
@@ -85,7 +101,8 @@ Claude Code 给项目起记忆目录名时，会把路径里的汉字全换成"-
 ## 路线图
 
 - [ ] 在 Mac、Linux、Windows 真机上用起来，按实际使用情况改
-- [ ] 定时任务模板：launchd、systemd、Windows 计划任务
+- [x] 自动叫醒的后台任务：launchd、systemd、Windows 计划任务（Linux 和 Windows 还没在真机上装过）
+- [ ] 定时同步的后台任务：现在要手动跑 `yizhan sync`，或靠 AI 会话结束时自动推送
 - [ ] MCP 接口，让 Cursor、Antigravity 这类没有 hook 的工具也能收发信
 - [ ] 要改别人负责的文件时先提醒（PreToolUse hook）
 - [ ] PowerShell 也能用：现在生成的命令只适用于 bash，在 Windows 上就是 Git Bash

@@ -223,7 +223,8 @@ class Ledger:
             old = util.read_json(path, {}) or {}
             if old and old.get("agent") != agent:
                 raise YizhanError(f"{address} 原来登记的是 {old.get('agent')}，不能改成 {agent}；换个岗位名")
-            prof = {
+            prof = dict(old)            # keep fields set elsewhere, such as autowake
+            prof.update({
                 "address": address, "name": name, "machine": self.machine, "agent": agent,
                 "title": title or old.get("title", ""),
                 "duty": duty or old.get("duty", ""),
@@ -233,12 +234,24 @@ class Ledger:
                 "focus": old.get("focus", ""),
                 "focus_at": old.get("focus_at"),
                 "created": old.get("created") or util.iso(util.utcnow()),
-            }
+            })
             for key, value in (("wake", wake), ("workdir", workdir), ("command", command)):
                 if value is not None:
                     prof[key] = value
-                elif key in old:
-                    prof[key] = old[key]
+            util.write_json(path, prof)
+        return prof
+
+    def update_seat(self, address, **fields):
+        """Set fields on a local seat's profile; a value of None removes the field."""
+        self.require_seat(address, local=True)
+        path = self.seat_dir(address) / "profile.json"
+        with self.lock():
+            prof = util.read_json(path, {}) or {}
+            for key, value in fields.items():
+                if value is None:
+                    prof.pop(key, None)
+                else:
+                    prof[key] = value
             util.write_json(path, prof)
         return prof
 
