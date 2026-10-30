@@ -96,7 +96,7 @@ def mirror_memory(ledger):
     return notes
 
 
-def integrate(root, timeout):
+def integrate(root, timeout, machine):
     """Fetch, then fast-forward, or replay local commits after the remote ones."""
     branch = gitio.branch(root)
     gitio.git(root, "fetch", "-q", "origin", timeout=timeout, network=True)
@@ -108,11 +108,14 @@ def integrate(root, timeout):
         return "已拉取"
     if gitio.git(root, "merge", "-q", "--ff-only", upstream, check=False).returncode == 0:
         return "已拉取"
-    r = gitio.git(root, "rebase", "-q", "--autostash", upstream, check=False)
+    # Replaying commits (and the autostash) writes new commits, so git needs an identity.
+    who = gitio.identity_args(root, machine)
+    r = gitio.git(root, *who, "rebase", "-q", "--autostash", upstream, check=False)
     if r.returncode != 0:
         gitio.git(root, "rebase", "--abort", check=False)
-        raise gitio.GitError("把本地提交接到远端之后失败，已撤回；本地提交还在，没推送。"
-                             "多半是有机器改了不归它写的文件：" + " ".join((r.stderr or r.stdout).split())[:300])
+        said = " ".join((r.stderr or r.stdout).split())[:300]
+        hint = "多半是有机器改了不归它写的文件。" if "CONFLICT" in (r.stdout or "") + (r.stderr or "") else ""
+        raise gitio.GitError(f"把本地提交接到远端之后失败，已撤回；本地提交还在，没推送。{hint}git 的原话：{said}")
     return "已拉取（本地提交接在远端之后）"
 
 
@@ -121,7 +124,7 @@ def pull_only(ledger, timeout=30):
     if not gitio.has_remote(ledger.root):
         return "没有远端"
     with util.file_lock(ledger.state_dir / "git.lock", timeout=5):
-        return integrate(ledger.root, timeout)
+        return integrate(ledger.root, timeout, ledger.machine)
 
 
 def sync(ledger, quick=False, allow_shared=False, push=True, net_timeout=60):
@@ -145,7 +148,7 @@ def sync(ledger, quick=False, allow_shared=False, push=True, net_timeout=60):
             report["committed"] = gitio.head(ledger.root)
         if push and gitio.has_remote(ledger.root):
             try:
-                report["pulled"] = integrate(ledger.root, net_timeout)
+                report["pulled"] = integrate(ledger.root, net_timeout, ledger.machine)
                 upstream = f"origin/{gitio.branch(ledger.root)}"
                 if gitio.head(ledger.root) and gitio.ahead_of(ledger.root, upstream):
                     gitio.git(ledger.root, "push", "-q", "-u", "origin",

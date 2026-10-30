@@ -33,6 +33,10 @@ class Sandbox(unittest.TestCase):
             "CODEX_HOME": str(self.tmp / "codex"),
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_NOSYSTEM": "1",
+            # Like a fresh CI machine: git may not guess a name and email from the OS.
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "user.useConfigOnly",
+            "GIT_CONFIG_VALUE_0": "true",
         }
         self._env = mock.patch.dict(os.environ, env)
         self._env.start()
