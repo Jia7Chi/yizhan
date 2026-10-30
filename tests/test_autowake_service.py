@@ -136,11 +136,36 @@ class BackgroundService(Sandbox):
     def test_uninstall_never_installed_is_quiet_on_every_platform(self):
         for platform in ("darwin", "linux", "windows"):
             with self.subTest(platform=platform):
-                p = self.plan(platform)
+                p = service.handle(self.led, self.seat, platform=platform)
                 run = mock.Mock(return_value=(1, "no such job"))
                 service.uninstall(p, run=run)
                 self.assertEqual(run.call_args_list,
                                  [mock.call(argv) for argv in p["off"] + p["after_off"]])
+
+    def test_handle_can_query_and_remove_existing_job_without_resolving_launcher(self):
+        for platform in ("darwin", "linux", "windows"):
+            with self.subTest(platform=platform):
+                p = self.plan(platform)
+                service.install(p, run=lambda argv: (0, ""))
+                with mock.patch.object(service, "job_argv", side_effect=FileNotFoundError("launcher gone")) as argv:
+                    handle = service.handle(self.led, self.seat, platform=platform)
+                    query = mock.Mock(return_value=(0, "running"))
+                    self.assertTrue(service.installed(handle, run=query))
+                    query.assert_called_once_with(p["check"])
+                    calls = []
+
+                    def remove(command):
+                        calls.append(command)
+                        if command in p["off"]:
+                            self.assertTrue(all(Path(path).is_file() for path in p["files"]))
+                        if command in p["after_off"]:
+                            self.assertTrue(all(not Path(path).exists() for path in p["files"]))
+                        return 0, ""
+
+                    service.uninstall(handle, run=remove)
+                    self.assertEqual(calls, p["off"] + p["after_off"])
+                    self.assertTrue(all(not Path(path).exists() for path in p["files"]))
+                    argv.assert_not_called()
 
     def test_uninstall_removes_job_files_before_systemd_reload(self):
         p = self.plan("linux")
@@ -160,7 +185,7 @@ class BackgroundService(Sandbox):
 
     def test_installed_queries_job_manager_instead_of_presence_of_files(self):
         for platform in ("darwin", "linux", "windows"):
-            p = self.plan(platform)
+            p = service.handle(self.led, self.seat, platform=platform)
             for code, expected in ((0, True), (1, False), (3, False)):
                 with self.subTest(platform=platform, returncode=code):
                     run = mock.Mock(return_value=(code, "status"))

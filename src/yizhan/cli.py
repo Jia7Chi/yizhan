@@ -242,9 +242,9 @@ def cmd_wake(ns):
 
 
 def _service_plan(led, prof):
-    """The installed job, found by its name; the interval does not matter for removing or
-    checking it, so a bad saved interval can never block `off` or `status`."""
-    return service.plan(led, prof["address"])
+    """The installed job, found by its name alone: checking or removing it needs neither the
+    interval nor the command line, so neither can block `off`, `status` or `doctor`."""
+    return service.handle(led, prof["address"])
 
 
 def cmd_autowake(ns):
@@ -263,8 +263,8 @@ def cmd_autowake(ns):
             budget = int(s.get("wake_budget_per_day") or led.settings["wake_budget_per_day"])
             job = ("后台任务在跑" if service.installed(_service_plan(led, s))
                    else "后台任务没在跑，别的机器来的信要等有人开会话")
-            print(f"- {s['address']}：自动叫醒开着；今天叫醒 {used}/{budget} 次；{job}；"
-                  f"上次叫醒 {led.fmt_time(st.get('last_wake_at'))}")
+            last = f"上次叫醒 {led.fmt_time(st['last_wake_at'])}" if st.get("last_wake_at") else "还没叫醒过"
+            print(f"- {s['address']}：自动叫醒开着；今天叫醒 {used}/{budget} 次；{job}；{last}")
             if st.get("last_wake_rc"):
                 print(f"  上次叫醒失败（返回码 {st['last_wake_rc']}），信已放回待办，下次再试：{st.get('last_wake_error', '')}")
         return 0
@@ -290,7 +290,8 @@ def cmd_autowake(ns):
         raise YizhanError(f"被叫醒的 Codex 只肯在 git 仓库里干活，而 {workdir or '它的工作文件夹'} 不在 git 仓库里。"
                           f"用 yizhan seat add {prof['name']} --agent codex --workdir <一个 git 仓库> 指定，"
                           "或者在那个文件夹里 git init")
-    p = service.plan(led, seat, ns.interval)     # check the interval before anything changes
+    # Check the job before anything changes; without a job there is nothing to check.
+    p = None if ns.no_service else service.plan(led, seat, ns.interval)
     budget = int(ns.budget or prof.get("wake_budget_per_day") or led.settings["wake_budget_per_day"])
     rounds = led.settings["max_rounds"]
     print(f"打开以后，{seat} 收到要它动手的信（请求或答复）会自己启动一次 Codex，处理完就退出：")
@@ -308,8 +309,8 @@ def cmd_autowake(ns):
             print("没有打开。")
             return 1
     led.update_seat(seat, wake="exec", autowake=True, wake_budget_per_day=budget, command=exe,
-                    autowake_interval=int(ns.interval))
-    if not ns.no_service:
+                    autowake_interval=None if p is None else int(ns.interval))
+    if p is not None:
         try:
             service.install(p)
         except YizhanError as e:

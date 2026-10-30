@@ -2,6 +2,7 @@
 import contextlib
 import io
 import os
+import subprocess
 import unittest
 from unittest import mock
 
@@ -44,6 +45,13 @@ class AutowakeCLI(Sandbox):
 
     def enable(self, *args):
         return self.run_cli("autowake", "on", "--as", self.seat, *args)
+
+    def windows_long_command(self):
+        # Reproduce the Windows /TR failure without running a real job manager.
+        argv = ["C:\\" + "a" * 301 + "\\yizhan.exe", "wake", "--as", self.seat]
+        self.assertEqual(len(subprocess.list2cmdline(argv)), 335)
+        self.enter_patch(mock.patch.object(service, "current_platform", return_value="windows"))
+        return self.enter_patch(mock.patch.object(service, "job_argv", return_value=argv))
 
     def test_default_status_is_off_and_does_not_probe_service(self):
         code, output = self.run_cli("autowake", "status")
@@ -148,6 +156,8 @@ class AutowakeCLI(Sandbox):
         self.assertIn("2/3", output)
         self.assertIn("后台任务没在跑", output)
         self.assertIn("run failed", output)
+        self.assertIn("还没叫醒过", output)
+        self.assertNotIn("上次叫醒 ?", output)
         self.led.update_seat(self.seat, workdir=str(self.folder("no-git")))
         with mock.patch.object(adapters, "hooks_installed", return_value=True), \
                 mock.patch.object(adapters, "memory_collisions", return_value={}):
@@ -171,6 +181,103 @@ class AutowakeCLI(Sandbox):
         self.assertEqual(code, 0, output)
         self.assertEqual(self.led.seat(self.seat)["wake"], "queue")
         self.assertFalse(self.led.seat(self.seat).get("autowake"))
+
+    def test_windows_long_command_is_rejected_before_changing_profile(self):
+        self.windows_long_command()
+        for already_enabled in (False, True):
+            with self.subTest(already_enabled=already_enabled):
+                if already_enabled:
+                    self.led.update_seat(self.seat, autowake=True, wake="exec",
+                                         autowake_interval=300, wake_budget_per_day=7)
+                before = self.led.seat(self.seat)
+                code, output = self.enable("--yes", "--interval", "120", "--budget", "3")
+                self.assertEqual(code, 2, output)
+                self.assertIn("335", output)
+                self.assertIn("Windows 计划任务", output)
+                self.assertEqual(self.led.seat(self.seat), before)
+                self.install.assert_not_called()
+
+    def test_windows_no_service_ignores_long_command_and_install_interval(self):
+        argv = self.windows_long_command()
+        for saved_interval in (None, 120):
+            for interval in (59, 86341):
+                with self.subTest(saved_interval=saved_interval, interval=interval):
+                    self.led.update_seat(self.seat, autowake_interval=saved_interval, focus="review")
+                    code, output = self.enable("--yes", "--no-service", "--interval", str(interval))
+                    self.assertEqual(code, 0, output)
+                    prof = self.led.seat(self.seat)
+                    self.assertTrue(prof["autowake"])
+                    self.assertEqual(prof["wake"], "exec")
+                    self.assertEqual(prof["focus"], "review")
+                    self.assertNotIn("autowake_interval", prof)
+                    self.assertIn("不装后台任务", output)
+        argv.assert_not_called()
+        self.install.assert_not_called()
+
+    def test_windows_status_handles_long_command_and_invalid_saved_intervals(self):
+        argv = self.windows_long_command()
+        for interval in (59, 86341, "broken"):
+            self.led.update_seat(self.seat, autowake=True, wake="exec", autowake_interval=interval)
+            before = self.led.seat(self.seat)
+            for running in (True, False):
+                with self.subTest(interval=interval, running=running):
+                    self.installed.reset_mock()
+                    self.installed.return_value = running
+                    code, output = self.run_cli("autowake", "status")
+                    self.assertEqual(code, 0, output)
+                    self.assertIn("后台任务在跑" if running else "后台任务没在跑", output)
+                    self.assertIn("还没叫醒过", output)
+                    self.assertEqual(self.led.seat(self.seat), before)
+                    self.installed.assert_called_once()
+                    self.assertEqual(self.installed.call_args.args[0]["check"],
+                                     ["schtasks", "/Query", "/TN", "yizhan-wake-codex-mac"])
+        argv.assert_not_called()
+        self.install.assert_not_called()
+
+    def test_windows_doctor_reports_job_status_despite_long_command_and_bad_interval(self):
+        argv = self.windows_long_command()
+        with mock.patch.object(adapters, "hooks_installed", return_value=True), \
+                mock.patch.object(adapters, "memory_collisions", return_value={}):
+            for interval in (59, 86341, "broken"):
+                self.led.update_seat(self.seat, autowake=True, wake="exec", autowake_interval=interval)
+                before = self.led.seat(self.seat)
+                for running in (True, False):
+                    with self.subTest(interval=interval, running=running):
+                        self.installed.reset_mock()
+                        self.installed.return_value = running
+                        code, output = self.run_cli("doctor")
+                        self.assertEqual(code, 0 if running else 1, output)
+                        warnings = [line for line in output.splitlines() if line.startswith("[查]")]
+                        self.assertEqual(len(warnings), 0 if running else 1, output)
+                        if not running:
+                            self.assertIn("后台任务没在跑", warnings[0])
+                        self.assertEqual(self.led.seat(self.seat), before)
+                        self.installed.assert_called_once()
+                        self.assertEqual(self.installed.call_args.args[0]["check"],
+                                         ["schtasks", "/Query", "/TN", "yizhan-wake-codex-mac"])
+        argv.assert_not_called()
+        self.install.assert_not_called()
+
+    def test_windows_off_removes_job_by_name_despite_long_command_and_bad_interval(self):
+        argv = self.windows_long_command()
+        for interval in (59, 86341, "broken"):
+            with self.subTest(interval=interval):
+                self.led.update_seat(self.seat, autowake=True, wake="exec",
+                                     autowake_interval=interval, focus="review", wake_budget_per_day=7)
+                self.uninstall.reset_mock()
+                code, output = self.run_cli("autowake", "off", "--as", self.seat)
+                self.assertEqual(code, 0, output)
+                prof = self.led.seat(self.seat)
+                self.assertNotIn("autowake", prof)
+                self.assertNotIn("autowake_interval", prof)
+                self.assertEqual(prof["wake"], "queue")
+                self.assertEqual(prof["focus"], "review")
+                self.assertEqual(prof["wake_budget_per_day"], 7)
+                self.uninstall.assert_called_once()
+                self.assertEqual(self.uninstall.call_args.args[0]["off"],
+                                 [["schtasks", "/Delete", "/F", "/TN", "yizhan-wake-codex-mac"]])
+        argv.assert_not_called()
+        self.install.assert_not_called()
 
 
 class SeatAndArguments(Sandbox):
