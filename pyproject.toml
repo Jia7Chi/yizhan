@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yizhan"
+version = "0.1.0.dev0"
+description = "A git-native post station that lets AI coding agents on different machines work on shared projects."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "yizhan contributors"}]
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Software Development",
+]
+
+[project.scripts]
+yizhan = "yizhan.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
