@@ -88,6 +88,7 @@ Claude Code 给项目起记忆目录名时，会把路径里的汉字全换成"-
 - [ ] 定时任务模板：launchd、systemd、Windows 计划任务
 - [ ] MCP 接口，让 Cursor、Antigravity 这类没有 hook 的工具也能收发信
 - [ ] 要改别人负责的文件时先提醒（PreToolUse hook）
+- [ ] PowerShell 也能用：现在生成的命令只适用于 bash，在 Windows 上就是 Git Bash
 - [ ] 英文界面
 - [ ] 原始数据清单与取回回执
 

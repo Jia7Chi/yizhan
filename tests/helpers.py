@@ -40,7 +40,9 @@ class Sandbox(unittest.TestCase):
         }
         self._env = mock.patch.dict(os.environ, env)
         self._env.start()
-        for key in ("YIZHAN_LEDGER", "YIZHAN_MACHINE", "YIZHAN_SEAT"):
+        for key in ("YIZHAN_LEDGER", "YIZHAN_MACHINE", "YIZHAN_SEAT",
+                    "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME",
+                    "GIT_COMMITTER_EMAIL", "EMAIL"):
             os.environ.pop(key, None)
 
     def tearDown(self):

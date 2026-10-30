@@ -128,7 +128,13 @@ def cmd_send(ns):
     led = ledger_mod.open_local()
     meta = mail.send(led, _me(led, ns), ns.to, ns.kind, ns.subject, _body(ns), ns.reply_to,
                      ns.key, ns.artifact, ns.wake, ns.now, ns.project)
-    print(f"已发 {meta['id']} → {'、'.join(meta['to'])}（{'会叫醒对方' if meta['wake'] else '不叫醒对方'}）")
+    if not meta["wake"]:
+        how = "不叫醒对方，对方下次查信时看"
+    else:
+        modes = {(led.seat(t) or {}).get("wake") or adapters.get((led.seat(t) or {}).get("agent", "claude")).default_wake
+                 for t in meta["to"]}
+        how = "待办；对方只排队，下次开会话时看到" if modes == {"queue"} else "待办；唤醒器在跑的话会叫醒对方"
+    print(f"已发 {meta['id']} → {'、'.join(meta['to'])}（{how}）")
     if any(t.split("@", 1)[1] != led.machine for t in meta["to"]):
         print("收信方里有别的机器上的岗位：AI 会话这一轮结束时会自动推送；不在会话里发的，跑一下 yizhan sync")
 
@@ -215,8 +221,7 @@ def cmd_hooks(ns):
         print("Codex 要先审核才会运行新 hook：打开 Codex 输入 /hooks，确认这几条。")
     else:
         print("Claude Code 下次开会话时生效。Windows 上 hook 默认经 Git Bash 执行。")
-    if cmd != "yizhan":
-        print("提示：用 pip install -e <项目目录> 装成命令以后，这里的命令会变短，换机器也不用改路径。")
+    print("命令用的是绝对路径：从程序坞打开的应用跑 hook 时，不一定带着终端里的 PATH。")
 
 
 def cmd_wake(ns):
@@ -438,6 +443,11 @@ def main(argv=None):
         return 3
     except YizhanError as e:
         print("错误：" + str(e), file=sys.stderr)
+        return 2
+    except PermissionError as e:
+        # Common when an agent runs yizhan inside its own sandbox.
+        print(f"错误：没有权限写 {e.filename}。如果是在 AI 的沙箱里运行，"
+              "请让它申请写这个目录，或者把账本和状态目录放到它能写的地方。", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         return 130

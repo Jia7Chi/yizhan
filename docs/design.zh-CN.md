@@ -78,7 +78,9 @@
 | 记忆镜像 | `~/.claude/projects/<编码后的路径>/memory/` | 暂不镜像（SQLite，属于生成的状态） |
 | 规矩文件 | CLAUDE.md，可写一行 `@AGENTS.md` 引入 | AGENTS.md |
 
-Windows 上 Claude Code 的 hook 默认经 Git Bash 执行，所以生成的命令不用 `2>/dev/null` 这类只有 bash 认的写法；推荐用 `pip install` 装成命令，省得处理路径里的引号。
+Windows 上 Claude Code 的 hook 默认经 Git Bash 执行，所以生成的命令按 bash 的规矩写：路径里的反斜杠换成正斜杠，再整个加单引号，空格和 `$` 都照原样保留；也不用 `2>/dev/null` 这类写法。PowerShell 的引号规矩不一样，现在还不支持（没装 Git Bash 的 Claude Code、Codex 的 `commandWindows` 都属于这种情况）。
+
+命令一律写成不靠 PATH 的绝对形式：从程序坞打开的应用跑 hook 时，不一定带着终端里的 PATH。找到的 `yizhan` 如果自己就能跑（Windows 的 `.exe`、编译好的程序，或第一行写死解释器绝对路径的脚本），就直接用；如果第一行是 `#!/usr/bin/env python3` 这种还要靠 PATH 找 Python 的，就在前面显式写上当前的 Python。
 
 ## 9. 中文路径撞车
 

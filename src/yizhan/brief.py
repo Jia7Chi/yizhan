@@ -19,15 +19,40 @@ CUT_NOTE = "（提醒太长，后面省略了一部分；用 yizhan inbox、rost
 
 
 def _quote(s):
+    """Quote one argument for bash, zsh or sh, including Git Bash, which runs hooks on
+    Windows. Bash reads a backslash outside quotes as an escape, so Windows paths switch
+    to forward slashes; single quotes then keep spaces, $ and the rest literal."""
     if os.name == "nt":
-        return f'"{s}"' if " " in s else s
+        s = s.replace("\\", "/")
     return shlex.quote(s)
 
 
+def _runs_on_its_own(path):
+    """True if the program needs no python on PATH: a Windows .exe, a compiled program,
+    or a script whose #! line names its interpreter by absolute path."""
+    if os.name == "nt":
+        return path.lower().endswith(".exe")
+    try:
+        with open(path, "rb") as f:
+            first = f.readline(256)
+    except OSError:
+        return False
+    if not first.startswith(b"#!"):
+        return True
+    interpreter = first[2:].split()
+    return bool(interpreter) and interpreter[0].startswith(b"/") and interpreter[0] != b"/usr/bin/env"
+
+
 def cli_prefix():
-    """How a session should call yizhan on this machine."""
-    if shutil.which("yizhan"):
-        return "yizhan"
+    """How to call yizhan on this machine, as an absolute command that needs no PATH:
+    an app started from the Dock may run hooks without the shell's PATH, and a script
+    starting with `#!/usr/bin/env python3` would still look python3 up on PATH."""
+    found = shutil.which("yizhan")
+    if found:
+        found = os.path.abspath(found)
+        if _runs_on_its_own(found):
+            return _quote(found)
+        return f"{_quote(sys.executable or 'python3')} {_quote(found)}"
     exe = sys.executable or "python3"
     launcher = Path(__file__).resolve().parents[2] / "bin" / "yizhan"
     if launcher.is_file():

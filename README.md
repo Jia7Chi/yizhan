@@ -73,6 +73,7 @@ yizhan wake --as codex@linux --watch
 - Cross-machine delivery takes minutes, not seconds: there is no server, only git. In return nothing is lost offline.
 - What another session never wrote down cannot be seen here.
 - Vendors' private memories are not merged. Claude's memory is mirrored read-only; Codex keeps its memory in SQLite and is not mirrored yet.
+- Generated commands are for bash, which on Windows means Git Bash. PowerShell hosts are not supported yet.
 
 ## License
 
