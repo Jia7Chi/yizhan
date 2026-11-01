@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from . import brief, util
+from .i18n import pick
 from .util import YizhanError
 
 DEFAULT_INTERVAL_S = 300    # how soon a letter from another machine gets noticed
@@ -76,7 +77,8 @@ def plan(ledger, seat, interval=DEFAULT_INTERVAL_S, platform=None):
     that load the job. The interval and the command line are checked here, and only here."""
     interval = int(interval)
     if interval < 60:
-        raise YizhanError("间隔最少 60 秒：Windows 计划任务按整分钟算")
+        raise YizhanError(pick("间隔最少 60 秒：Windows 计划任务按整分钟算",
+                               "The interval must be at least 60 s: Windows scheduled tasks count whole minutes"))
     p = handle(ledger, seat, platform)
     argv = job_argv(seat)
     if p["kind"] == "launchd":
@@ -125,12 +127,17 @@ def _fill_systemd(p, seat, argv, interval):
 def _fill_schtasks(p, argv, interval):
     minutes = -(-interval // 60)            # round up: tasks repeat on whole minutes
     if minutes > SCHTASKS_MAX_MINUTES:
-        raise YizhanError(f"Windows 计划任务按分钟重复，最长只能隔 {SCHTASKS_MAX_MINUTES} 分钟；"
-                          f"把间隔设在 {SCHTASKS_MAX_MINUTES * 60} 秒以内")
+        raise YizhanError(pick(f"Windows 计划任务按分钟重复，最长只能隔 {SCHTASKS_MAX_MINUTES} 分钟；"
+                               f"把间隔设在 {SCHTASKS_MAX_MINUTES * 60} 秒以内",
+                               "A Windows scheduled task repeats in whole minutes, at most every "
+                               f"{SCHTASKS_MAX_MINUTES} minutes; set the interval to {SCHTASKS_MAX_MINUTES * 60} s "
+                               "or less"))
     line = subprocess.list2cmdline(argv)
     if len(line) > SCHTASKS_MAX_TR:
-        raise YizhanError(f"命令有 {len(line)} 个字符，Windows 计划任务最多放 {SCHTASKS_MAX_TR} 个；"
-                          "把 yizhan 装到路径短一些的地方再试")
+        raise YizhanError(pick(f"命令有 {len(line)} 个字符，Windows 计划任务最多放 {SCHTASKS_MAX_TR} 个；"
+                               "把 yizhan 装到路径短一些的地方再试",
+                               f"The command has {len(line)} characters, but a Windows scheduled task takes at "
+                               f"most {SCHTASKS_MAX_TR}; install yizhan under a shorter path and try again"))
     p["on"] = [["schtasks", "/Create", "/F", "/TN", p["name"], "/SC", "MINUTE", "/MO", str(minutes),
                 "/TR", line]]
 
@@ -154,7 +161,8 @@ def install(p, run=_run):
     for argv in p["on"]:
         code, out = run(argv)
         if code != 0:
-            raise YizhanError(f"{' '.join(argv[:3])} 失败：{out[:300]}")
+            raise YizhanError(pick(f"{' '.join(argv[:3])} 失败：{out[:300]}",
+                                   f"{' '.join(argv[:3])} failed: {out[:300]}"))
 
 
 def uninstall(p, run=_run):

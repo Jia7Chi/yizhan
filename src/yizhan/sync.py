@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from . import adapters, gitio, mail, state, util
+from .i18n import pick
 from .ledger import SHARED
 from .util import YizhanError
 
@@ -32,7 +33,8 @@ MEMORY_SUFFIXES = {".md", ".txt", ".json"}
 class SyncBlocked(YizhanError):
     def __init__(self, problems):
         self.problems = problems
-        super().__init__("同步被拦下，什么都没提交：\n" + "\n".join("- " + p for p in problems))
+        super().__init__(pick("同步被拦下，什么都没提交：\n", "Sync blocked, nothing was committed:\n")
+                         + "\n".join("- " + p for p in problems))
 
 
 def check(ledger, paths, allow_shared=False):
@@ -41,22 +43,28 @@ def check(ledger, paths, allow_shared=False):
     for rel in paths:
         owner = ledger.owner_of(rel)
         if owner == SHARED and not allow_shared:
-            problems.append(f"{rel} 是共用文件。改它要先跟其他机器打招呼，再加 --allow-shared 同步")
+            problems.append(pick(f"{rel} 是共用文件。改它要先跟其他机器打招呼，再加 --allow-shared 同步",
+                                 f"{rel} is a shared file. Tell the other machines before you change it, "
+                                 "then sync with --allow-shared"))
         elif owner not in (SHARED, ledger.machine):
-            problems.append(f"{rel} 归 {owner} 写，本机（{ledger.machine}）不能改")
+            problems.append(pick(f"{rel} 归 {owner} 写，本机（{ledger.machine}）不能改",
+                                 f"{rel} is written by {owner}; this machine ({ledger.machine}) may not change it"))
         f = ledger.root / rel
         if not f.is_file():
             continue                    # a deletion
         size = f.stat().st_size
         if size > max_mb * 1024 * 1024:
-            problems.append(f"{rel} 有 {size / 1048576:.1f} MB，超过 {max_mb:g} MB 上限；原始数据别放进账本")
+            problems.append(pick(f"{rel} 有 {size / 1048576:.1f} MB，超过 {max_mb:g} MB 上限；原始数据别放进账本",
+                                 f"{rel} is {size / 1048576:.1f} MB, over the {max_mb:g} MB limit; keep raw data "
+                                 "out of the ledger"))
             continue
         try:
             text = f.read_bytes().decode("utf-8", errors="ignore")
         except OSError:
             continue
         if any(rx.search(text) for rx in SECRET_PATTERNS):
-            problems.append(f"{rel} 里像是有密钥或令牌，删掉再同步")
+            problems.append(pick(f"{rel} 里像是有密钥或令牌，删掉再同步",
+                                 f"{rel} seems to contain a key or token; remove it, then sync again"))
     return problems
 
 
@@ -78,7 +86,7 @@ def mirror_memory(ledger):
                 if not f.is_file() or f.name.startswith(".") or f.suffix.lower() not in MEMORY_SUFFIXES:
                     continue
                 if f.stat().st_size > max_bytes:
-                    notes.append(f"记忆文件太大，没镜像：{f}")
+                    notes.append(pick(f"记忆文件太大，没镜像：{f}", f"Memory file too large, not mirrored: {f}"))
                     continue
                 wanted[f"{label}/{f.relative_to(src).as_posix()}"] = f
         existing = {}
@@ -102,27 +110,30 @@ def integrate(root, timeout, machine):
     gitio.git(root, "fetch", "-q", "origin", timeout=timeout, network=True)
     upstream = f"origin/{branch}"
     if gitio.git(root, "rev-parse", "--verify", "-q", upstream, check=False).returncode != 0:
-        return "远端还没有这条分支"
+        return pick("远端还没有这条分支", "The remote does not have this branch yet")
     if gitio.head(root) is None:                  # nothing committed here yet
         gitio.git(root, "checkout", "-q", "-B", branch, upstream)
-        return "已拉取"
+        return pick("已拉取", "Pulled")
     if gitio.git(root, "merge", "-q", "--ff-only", upstream, check=False).returncode == 0:
-        return "已拉取"
+        return pick("已拉取", "Pulled")
     # Replaying commits (and the autostash) writes new commits, so git needs an identity.
     who = gitio.identity_args(root, machine)
     r = gitio.git(root, *who, "rebase", "-q", "--autostash", upstream, check=False)
     if r.returncode != 0:
         gitio.git(root, "rebase", "--abort", check=False)
         said = " ".join((r.stderr or r.stdout).split())[:300]
-        hint = "多半是有机器改了不归它写的文件。" if "CONFLICT" in (r.stdout or "") + (r.stderr or "") else ""
-        raise gitio.GitError(f"把本地提交接到远端之后失败，已撤回；本地提交还在，没推送。{hint}git 的原话：{said}")
-    return "已拉取（本地提交接在远端之后）"
+        hint = (pick("多半是有机器改了不归它写的文件。", "Most likely a machine changed a file it does not own. ")
+                if "CONFLICT" in (r.stdout or "") + (r.stderr or "") else "")
+        raise gitio.GitError(pick(f"把本地提交接到远端之后失败，已撤回；本地提交还在，没推送。{hint}git 的原话：{said}",
+                                  "Could not replay the local commits on top of the remote ones, so that was undone; "
+                                  f"the local commits are still here and were not pushed. {hint}git said: {said}"))
+    return pick("已拉取（本地提交接在远端之后）", "Pulled (local commits replayed on top of the remote ones)")
 
 
 def pull_only(ledger, timeout=30):
     """Take in other machines' changes without committing anything (session start, waker)."""
     if not gitio.has_remote(ledger.root):
-        return "没有远端"
+        return pick("没有远端", "No remote")
     with util.file_lock(ledger.state_dir / "git.lock", timeout=5):
         return integrate(ledger.root, timeout, ledger.machine)
 
@@ -137,14 +148,16 @@ def sync(ledger, quick=False, allow_shared=False, push=True, net_timeout=60):
         paths = gitio.changed_paths(ledger.root)
         problems = check(ledger, paths, allow_shared)
         if problems:
-            _record(ledger, error="；".join(problems))
+            _record(ledger, error=pick("；", "; ").join(problems))
             raise SyncBlocked(problems)
         if paths:
             gitio.git(ledger.root, "add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul",
                       input_text="\0".join(paths) + "\0")
             stamp = ledger.local_date().strftime("%Y-%m-%d %H:%M")
+            what = summarize(paths)
             gitio.git(ledger.root, *gitio.identity_args(ledger.root, ledger.machine),
-                      "commit", "-q", "--no-verify", "-m", f"yizhan: {ledger.machine} {stamp}")
+                      "commit", "-q", "--no-verify", "-m",
+                      f"yizhan: {ledger.machine} {stamp}" + (f" · {what}" if what else ""))
             report["committed"] = gitio.head(ledger.root)
         if push and gitio.has_remote(ledger.root):
             try:
@@ -158,6 +171,49 @@ def sync(ledger, quick=False, allow_shared=False, push=True, net_timeout=60):
                 report["error"] = str(e)
         _record(ledger, report)
     return report
+
+
+_COUNTED = {"letter": "letters", "receipt": "receipts", "decision": "decisions",
+            "seat": "seats", "project": "projects", "machine": "machines"}
+_ORDER = ("letter", "receipt", "decision", "journal", "seat", "project", "machine", "memory", "status", "files")
+_LABEL = {"files": "shared files"}       # root files such as yizhan.json belong to every machine
+
+
+def summarize(paths):
+    """What a commit carries, for `git log`: '2 letters, 1 receipt, journal'. Seats, projects
+    and machines are counted by name, since one of them may touch several files."""
+    seen = {}
+    for p in paths:
+        p = p.replace("\\", "/")
+        if "/outbox/" in p:
+            key = "letter"
+        elif "/receipts/" in p:
+            key = "receipt"
+        elif "/decisions/" in p:
+            key = "decision"
+        elif "/journal/" in p:
+            key = "journal"
+        elif "/memory/" in p:
+            key = "memory"
+        elif p.endswith("/presence.json"):
+            key = "status"
+        elif p.endswith("/profile.json"):
+            key = "seat"
+        elif p.startswith("machines/"):
+            key = "machine"
+        elif p.startswith("projects/"):
+            key = "project"
+        else:
+            key = "files"
+        parts_of_path = p.split("/")
+        name = parts_of_path[1] if key in ("seat", "project", "machine") and len(parts_of_path) > 1 else p
+        seen.setdefault(key, set()).add(name)
+    parts = []
+    for key in _ORDER:
+        n = len(seen.get(key, ()))
+        if n:
+            parts.append(f"{n} {key if n == 1 else _COUNTED[key]}" if key in _COUNTED else _LABEL.get(key, key))
+    return ", ".join(parts)
 
 
 def needs_push(ledger, seat):

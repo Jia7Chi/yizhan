@@ -8,11 +8,16 @@ import re
 import secrets
 
 from . import util
+from .i18n import pick
 from .ledger import DECISION_RE
 from .util import YizhanError
 
 DECISION_STATUSES = ("confirmed", "pending", "retracted")
 DECISION_ZH = {"confirmed": "已确认", "pending": "待复核", "retracted": "已撤回"}
+
+
+def decision_label(status):
+    return pick(DECISION_ZH.get(status, status), status)
 ENTRY_RE = re.compile(r"^### (\d{2}):(\d{2}) (.+)$")
 
 
@@ -45,23 +50,24 @@ def find_decision(ledger, did):
     # A title may contain "[...]", which glob would read as a character class.
     hits = sorted((ledger.root / "projects").glob(f"*/decisions/{glob.escape(did)}.md"))
     if len(hits) != 1:
-        raise YizhanError(f"找不到定论 {did}")
+        raise YizhanError(pick(f"找不到定论 {did}", f"Cannot find decision {did}"))
     return hits[0]
 
 
 def decide(ledger, seat, project, title, body, status="confirmed", refs=(), supersedes=()):
     ledger.require_seat(seat, local=True)
     if ledger.project(project) is None:
-        raise YizhanError(f"没有 {project} 这个项目")
+        raise YizhanError(pick(f"没有 {project} 这个项目", f"There is no project called {project}"))
     if status not in DECISION_STATUSES:
-        raise YizhanError(f"定论状态只能是 {'、'.join(DECISION_STATUSES)}")
+        raise YizhanError(pick(f"定论状态只能是 {'、'.join(DECISION_STATUSES)}",
+                               f"A decision's status must be one of {', '.join(DECISION_STATUSES)}"))
     title, body = " ".join((title or "").split()), (body or "").strip()
     if not title or not body:
-        raise YizhanError("定论要有标题和正文")
+        raise YizhanError(pick("定论要有标题和正文", "A decision needs a title and a body"))
     known = {d["id"] for d in decisions(ledger)}
     for old in supersedes:
         if old not in known:
-            raise YizhanError(f"要取代的定论 {old} 不存在")
+            raise YizhanError(pick(f"要取代的定论 {old} 不存在", f"There is no decision {old} to supersede"))
     now = util.utcnow()
     stem = f"{ledger.local_date(now):%Y%m%d}_{seat}_{util.title_slug(title)}"
     folder = ledger.project_dir(project) / "decisions"
@@ -77,12 +83,15 @@ def decide(ledger, seat, project, title, body, status="confirmed", refs=(), supe
 def set_status(ledger, seat, did, status, note=""):
     ledger.require_seat(seat, local=True)
     if status not in DECISION_STATUSES:
-        raise YizhanError(f"定论状态只能是 {'、'.join(DECISION_STATUSES)}")
+        raise YizhanError(pick(f"定论状态只能是 {'、'.join(DECISION_STATUSES)}",
+                               f"A decision's status must be one of {', '.join(DECISION_STATUSES)}"))
     path = find_decision(ledger, did)
     with ledger.lock():
         meta, body = util.read_frontmatter(path)
         if meta.get("by") != seat:
-            raise YizhanError("只有写这条定论的岗位能改它的状态。有异议请另立一条，用 --supersedes 写明取代哪条")
+            raise YizhanError(pick("只有写这条定论的岗位能改它的状态。有异议请另立一条，用 --supersedes 写明取代哪条",
+                                   "Only the seat that wrote this decision can change its status. To disagree, "
+                                   "write a new one and name the one it replaces with --supersedes"))
         meta["status"] = status
         meta["updated"] = util.iso(util.utcnow())
         if note:
@@ -97,7 +106,7 @@ def log(ledger, seat, title, body=""):
     ledger.require_seat(seat, local=True)
     title = " ".join((title or "").split())
     if not title:
-        raise YizhanError("日志要有标题")
+        raise YizhanError(pick("日志要有标题", "A journal entry needs a title"))
     local = ledger.local_date()
     path = ledger.seat_dir(seat) / "journal" / f"{local:%Y-%m-%d}.md"
     text = f"### {local:%H:%M} {title}\n\n"

@@ -13,6 +13,7 @@ import secrets
 from pathlib import Path
 
 from . import util
+from .i18n import pick
 from .util import YizhanError
 
 KINDS = ("request", "reply", "update", "decision")
@@ -21,6 +22,14 @@ STATUSES = ("received", "working", "done", "deferred")
 STATUS_ZH = {"received": "已收到", "working": "处理中", "done": "已处理", "deferred": "暂缓"}
 TERMINAL = ("done", "deferred")
 ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+
+
+def kind_label(kind):
+    return pick(KIND_ZH.get(kind, kind), kind)
+
+
+def status_label(status):
+    return pick(STATUS_ZH.get(status, status), status)
 
 
 def new_id(now):
@@ -34,7 +43,7 @@ def key_id(sender, recipients, key):
 
 def check_id(mid):
     if not ID_RE.match(mid or ""):
-        raise YizhanError(f"信件编号“{mid}”格式不对")
+        raise YizhanError(pick(f"信件编号“{mid}”格式不对", f"\"{mid}\" is not a valid letter id"))
     return mid
 
 
@@ -42,9 +51,11 @@ def find(ledger, mid):
     check_id(mid)
     hits = sorted((ledger.root / "seats").glob(f"*/outbox/{mid}.md"))
     if not hits:
-        raise YizhanError(f"找不到编号为 {mid} 的信；对方机器上的信要等同步过来")
+        raise YizhanError(pick(f"找不到编号为 {mid} 的信；对方机器上的信要等同步过来",
+                               f"Cannot find letter {mid}; a letter from another machine shows up only after a sync"))
     if len(hits) > 1:
-        raise YizhanError(f"编号 {mid} 重复了：{', '.join(str(h) for h in hits)}")
+        raise YizhanError(pick(f"编号 {mid} 重复了：{', '.join(str(h) for h in hits)}",
+                               f"Letter id {mid} is used more than once: {', '.join(str(h) for h in hits)}"))
     return hits[0]
 
 
@@ -71,7 +82,7 @@ def expand_recipients(ledger, targets, sender):
         if t.startswith("project:"):
             name = t.split(":", 1)[1]
             if ledger.project(name) is None:
-                raise YizhanError(f"没有 {name} 这个项目")
+                raise YizhanError(pick(f"没有 {name} 这个项目", f"There is no project called {name}"))
             out += [s["address"] for s in ledger.seats() if name in s.get("projects", [])]
         else:
             util.parse_address(t)
@@ -89,33 +100,38 @@ def send(ledger, sender, to, kind, subject, body, reply_to=None, key=None,
     st = ledger.settings
     ledger.require_seat(sender, local=True)
     if kind not in KINDS:
-        raise YizhanError(f"信的类型只能是 {'、'.join(KINDS)}")
+        raise YizhanError(pick(f"信的类型只能是 {'、'.join(KINDS)}",
+                               f"The letter kind must be one of {', '.join(KINDS)}"))
     subject, body = (subject or "").strip(), (body or "").strip()
     if not subject or not body:
-        raise YizhanError("主题和正文都不能空")
+        raise YizhanError(pick("主题和正文都不能空", "A letter needs both a subject and a body"))
     limit = int(st["max_body_chars"])
     if len(body) > limit:
-        raise YizhanError(f"正文 {len(body)} 字，超过 {limit} 字。正文只写结论、要对方做什么和文件路径，"
-                          "细节写进文件，用 --artifact 附上")
+        raise YizhanError(pick(f"正文 {len(body)} 字，超过 {limit} 字。正文只写结论、要对方做什么和文件路径，"
+                               "细节写进文件，用 --artifact 附上",
+                               f"The body has {len(body)} characters, more than the limit of {limit}. A body holds "
+                               "only conclusions, what you ask for and file paths; put details in a file and "
+                               "attach it with --artifact"))
     original = None
     if reply_to:
         original, _ = read(find(ledger, reply_to))
         if sender not in original.get("to", []):
-            raise YizhanError("只有原信的收信方才能回这封信")
+            raise YizhanError(pick("只有原信的收信方才能回这封信",
+                                   "Only a recipient of the original letter can reply to it"))
         to = list(to) or [original["from"]]
         project = project or original.get("project")
     recipients = expand_recipients(ledger, to, sender)
     if not recipients:
-        raise YizhanError("没有收信方")
+        raise YizhanError(pick("没有收信方", "The letter has no recipients"))
     for r in recipients:
         ledger.require_seat(r)
     if project and ledger.project(project) is None:
-        raise YizhanError(f"没有 {project} 这个项目")
+        raise YizhanError(pick(f"没有 {project} 这个项目", f"There is no project called {project}"))
     arts = []
     for a in artifacts:
         p = Path(a).expanduser()
         if not p.exists():
-            raise YizhanError(f"附件不存在：{a}")
+            raise YizhanError(pick(f"附件不存在：{a}", f"Attachment not found: {a}"))
         arts.append(str(p.resolve()))
     depth = int(original.get("depth", 0)) + 1 if original else 0
     want = kind in st["wake_kinds"] if wake is None else bool(wake)
@@ -134,7 +150,9 @@ def send(ledger, sender, to, kind, subject, body, reply_to=None, key=None,
             old, old_body = read(path)
             stable = ("from", "to", "kind", "subject", "reply_to", "artifacts")
             if old_body != body or any(old.get(k) != meta[k] for k in stable):
-                raise YizhanError("同一个 --key 对应了不同的内容，拒绝覆盖。内容变了就换一个 key")
+                raise YizhanError(pick("同一个 --key 对应了不同的内容，拒绝覆盖。内容变了就换一个 key",
+                                       "This --key was already used for different content, so nothing was "
+                                       "overwritten. Use a new key when the content changes"))
             return old
         util.write_text_atomic(path, util.dump_frontmatter(meta, body))
     return meta
@@ -170,12 +188,15 @@ def latest_receipt(ledger, seat, mid):
 def ack(ledger, seat, mid, status, note):
     ledger.require_seat(seat, local=True)
     if status not in STATUSES:
-        raise YizhanError(f"回执状态只能是 {'、'.join(STATUSES)}")
+        raise YizhanError(pick(f"回执状态只能是 {'、'.join(STATUSES)}",
+                               f"The receipt status must be one of {', '.join(STATUSES)}"))
     if not (note or "").strip():
-        raise YizhanError("回执要写一句说明。“收到”不等于同意对方的结论")
+        raise YizhanError(pick("回执要写一句说明。“收到”不等于同意对方的结论",
+                               "A receipt needs a one-line note. \"Received\" does not mean you agree with "
+                               "the sender's conclusions"))
     meta, _ = read(find(ledger, mid))
     if seat not in meta.get("to", []):
-        raise YizhanError("只有收信方能登记回执")
+        raise YizhanError(pick("只有收信方能登记回执", "Only a recipient can record a receipt"))
     rec = {"id": mid, "seat": seat, "status": status, "note": note.strip(), "at": util.iso(util.utcnow())}
     with ledger.lock():
         util.append_text(receipt_file(ledger, seat, mid), json.dumps(rec, ensure_ascii=False) + "\n")
@@ -225,35 +246,39 @@ def is_sealed(ledger, meta):
 
 def line(ledger, item):
     m, rec = item["meta"], item.get("receipt")
-    tags = [f"{item.get('chars', 0)} 字"]
+    chars = item.get("chars", 0)
+    tags = [pick(f"{chars} 字", f"{chars} chars")]
     if m.get("reply_to"):
-        tags.append("回信")
+        tags.append(pick("回信", "reply"))
     if m.get("artifacts"):
-        tags.append(f"附件 {len(m['artifacts'])}")
+        n = len(m["artifacts"])
+        tags.append(pick(f"附件 {n}", f"{n} attachment" + ("s" if n > 1 else "")))
     if rec:
-        tags.append(STATUS_ZH.get(rec.get("status"), str(rec.get("status"))))
+        tags.append(status_label(rec.get("status")))
     if m.get("wake"):
-        tags.append("待办")
+        tags.append(pick("待办", "needs action"))
     if int(m.get("depth", 0)) >= 2 * int(ledger.settings["max_rounds"]):
-        tags.append("已过往返上限，分歧请交用户裁决")
-    kind = KIND_ZH.get(m.get("kind"), m.get("kind"))
-    return f"{m['id']} [{kind}] {ledger.fmt_time(m.get('created'))} {m['from']}：{m['subject']}（{'，'.join(tags)}）"
+        tags.append(pick("已过往返上限，分歧请交用户裁决", "round limit reached: the user decides"))
+    head = f"{m['id']} [{kind_label(m.get('kind'))}] {ledger.fmt_time(m.get('created'))} {m['from']}"
+    return pick(f"{head}：{m['subject']}（{'，'.join(tags)}）", f"{head}: {m['subject']} ({', '.join(tags)})")
 
 
 def show_text(ledger, meta, body):
-    kind = KIND_ZH.get(meta.get("kind"), meta.get("kind"))
-    first = f"{meta['id']} [{kind}] {meta['from']} → {'、'.join(meta['to'])}  {ledger.fmt_time(meta.get('created'))}"
+    first = (f"{meta['id']} [{kind_label(meta.get('kind'))}] {meta['from']} → "
+             + pick("、", ", ").join(meta["to"]) + f"  {ledger.fmt_time(meta.get('created'))}")
     if meta.get("reply_to"):
-        first += f"，回复 {meta['reply_to']}"
-    head = [first, "主题：" + meta["subject"]]
+        first += pick(f"，回复 {meta['reply_to']}", f", replying to {meta['reply_to']}")
+    head = [first, pick("主题：", "Subject: ") + meta["subject"]]
     if meta.get("project"):
-        head.append("项目：" + meta["project"])
+        head.append(pick("项目：", "Project: ") + meta["project"])
     if meta.get("artifacts"):
         machine = meta["from"].split("@", 1)[-1]
-        head.append(f"附件（路径在 {machine} 上）：" + "；".join(meta["artifacts"]))
+        head.append(pick(f"附件（路径在 {machine} 上）：", f"Attachments (paths on {machine}): ")
+                    + pick("；", "; ").join(meta["artifacts"]))
     for r in meta["to"]:
         rec = latest_receipt(ledger, r, meta["id"])
         if rec:
-            head.append(f"回执：{r} {STATUS_ZH.get(rec['status'], rec['status'])}"
-                        f"（{ledger.fmt_time(rec.get('at'))}）{rec.get('note', '')}")
+            when, note = ledger.fmt_time(rec.get("at")), rec.get("note", "")
+            head.append(pick(f"回执：{r} {status_label(rec['status'])}（{when}）{note}",
+                             f"Receipt: {r} {status_label(rec['status'])} ({when}) {note}"))
     return "\n".join(head) + "\n----\n" + body

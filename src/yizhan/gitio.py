@@ -4,11 +4,26 @@ from __future__ import annotations
 import os
 import subprocess
 
+from .i18n import pick
 from .util import YizhanError
 
 
 class GitError(YizhanError):
     pass
+
+
+# Variables that point git at some repository, index or object store. yizhan always
+# names the repository with -C; a value inherited from the caller (a git hook sets
+# GIT_DIR, for one) would otherwise send yizhan's commands to that other repository.
+REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+             "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX")
+
+
+def base_env():
+    """The environment for every git yizhan runs: no inherited repository, no prompts."""
+    env = {k: v for k, v in os.environ.items() if k not in REPO_VARS}
+    env["GIT_TERMINAL_PROMPT"] = "0"        # never hang on a password prompt
+    return env
 
 
 def _has_ssh_command(root):
@@ -17,8 +32,7 @@ def _has_ssh_command(root):
 
 
 def _env(root, network):
-    env = dict(os.environ)
-    env["GIT_TERMINAL_PROMPT"] = "0"        # never hang on a password prompt
+    env = base_env()
     if network and "GIT_SSH_COMMAND" not in env and not _has_ssh_command(root):
         # Fail fast instead of waiting for an interactive host-key or passphrase prompt.
         env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes -o ConnectTimeout=15"
@@ -31,15 +45,16 @@ def git(root, *args, timeout=60, check=True, network=False, input_text=None):
     try:
         r = subprocess.run(cmd, input=input_text, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=timeout,
-                           env=_env(root, network) if network else
-                           dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+                           env=_env(root, network) if network else base_env())
     except FileNotFoundError:
-        raise GitError("没找到 git 命令，请先安装 git") from None
+        raise GitError(pick("没找到 git 命令，请先安装 git",
+                            "The git command was not found; install git first")) from None
     except subprocess.TimeoutExpired:
-        raise GitError(f"git {args[0]} 超过 {timeout} 秒没完成") from None
+        raise GitError(pick(f"git {args[0]} 超过 {timeout} 秒没完成",
+                            f"git {args[0]} did not finish within {timeout} s")) from None
     if check and r.returncode != 0:
         msg = " ".join((r.stderr or r.stdout or "").split())[:400]
-        raise GitError(f"git {' '.join(args[:2])} 失败：{msg}")
+        raise GitError(pick(f"git {' '.join(args[:2])} 失败：{msg}", f"git {' '.join(args[:2])} failed: {msg}"))
     return r
 
 

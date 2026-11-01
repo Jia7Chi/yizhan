@@ -19,6 +19,8 @@ import time
 import unicodedata
 from pathlib import Path
 
+from .i18n import pick
+
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 ADDRESS_RE = re.compile(r"^([a-z0-9][a-z0-9-]{0,39})@([a-z0-9][a-z0-9-]{0,39})$")
 # Characters Windows refuses in file names, plus control characters.
@@ -34,7 +36,9 @@ class YizhanError(Exception):
 
 def check_name(value, what):
     if not isinstance(value, str) or not NAME_RE.match(value):
-        raise YizhanError(f"{what}“{value}”不合格：只能用小写英文字母、数字和连字符，最长 40 个字符")
+        raise YizhanError(pick(f"{what}“{value}”不合格：只能用小写英文字母、数字和连字符，最长 40 个字符",
+                               f"Invalid {what} \"{value}\": use only lower-case letters, digits and hyphens, "
+                               "at most 40 characters"))
     return value
 
 
@@ -42,7 +46,8 @@ def parse_address(address):
     """'claude@mac' -> ('claude', 'mac')."""
     m = ADDRESS_RE.match(address or "")
     if not m:
-        raise YizhanError(f"地址“{address}”不合格，格式是 名字@机器，例如 claude@mac")
+        raise YizhanError(pick(f"地址“{address}”不合格，格式是 名字@机器，例如 claude@mac",
+                               f"Invalid address \"{address}\": the form is name@machine, for example claude@mac"))
     return m.group(1), m.group(2)
 
 
@@ -81,7 +86,8 @@ def parse_offset(text):
     """'+08:00' -> a fixed-offset timezone."""
     m = re.fullmatch(r"([+-])(\d{2}):?(\d{2})", (text or "").strip())
     if not m:
-        raise YizhanError(f"时区“{text}”不合格，请写成 +08:00 这样的 UTC 偏移")
+        raise YizhanError(pick(f"时区“{text}”不合格，请写成 +08:00 这样的 UTC 偏移",
+                               f"Invalid time zone \"{text}\": write it as a UTC offset such as +08:00"))
     delta = dt.timedelta(hours=int(m.group(2)), minutes=int(m.group(3)))
     return dt.timezone(delta if m.group(1) == "+" else -delta)
 
@@ -97,15 +103,15 @@ def system_offset():
 
 def ago(t, now=None):
     if t is None:
-        return "还没有动静"
+        return pick("还没有动静", "never")
     secs = int(((now or utcnow()) - t).total_seconds())
     if secs < 60:
-        return "刚刚"
+        return pick("刚刚", "just now")
     if secs < 3600:
-        return f"{secs // 60} 分钟前"
+        return pick(f"{secs // 60} 分钟前", f"{secs // 60} min ago")
     if secs < 86400:
-        return f"{secs // 3600} 小时前"
-    return f"{secs // 86400} 天前"
+        return pick(f"{secs // 3600} 小时前", f"{secs // 3600} h ago")
+    return pick(f"{secs // 86400} 天前", f"{secs // 86400} d ago")
 
 
 # ---------- files ----------
@@ -170,14 +176,14 @@ def dump_frontmatter(meta, body):
 def load_frontmatter(text):
     lines = text.replace("\r\n", "\n").split("\n")
     if not lines or lines[0].strip() != FENCE:
-        raise ValueError("缺少文件头")
+        raise ValueError(pick("缺少文件头", "Missing header"))
     for i in range(1, len(lines)):
         if lines[i].strip() == FENCE:
             meta = json.loads("\n".join(lines[1:i]))
             if not isinstance(meta, dict):
-                raise ValueError("文件头不是 JSON 对象")
+                raise ValueError(pick("文件头不是 JSON 对象", "The header is not a JSON object"))
             return meta, "\n".join(lines[i + 1:]).rstrip("\n")
-    raise ValueError("文件头没有结束标记")
+    raise ValueError(pick("文件头没有结束标记", "The header has no closing --- line"))
 
 
 def read_frontmatter(path):
@@ -221,7 +227,9 @@ def file_lock(path, timeout=30.0):
                 break
             except OSError:
                 if time.monotonic() > deadline:
-                    raise YizhanError(f"等锁超时：{path}。可能另一个 yizhan 进程卡住了。")
+                    raise YizhanError(pick(f"等锁超时：{path}。可能另一个 yizhan 进程卡住了。",
+                                           f"Timed out waiting for the lock {path}. Another yizhan process "
+                                           "may be stuck."))
                 time.sleep(0.1)
         try:
             yield

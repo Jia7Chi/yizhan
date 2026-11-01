@@ -19,6 +19,7 @@ import subprocess
 import time
 
 from . import adapters, brief, gitio, mail, state, sync, util
+from .i18n import pick
 
 
 def wake_once(ledger, seat, dry_run=False, pull=True, now=None, runner=None):
@@ -38,7 +39,7 @@ def _wake_once(ledger, seat, dry_run, pull, now, runner):
         try:
             sync.pull_only(ledger, timeout=60)
         except util.YizhanError as e:
-            result["notes"].append(f"拉取失败：{e}")
+            result["notes"].append(pick(f"拉取失败：{e}", f"Pull failed: {e}"))
     now = now or util.utcnow()
     items = mail.inbox(ledger, seat)
     open_ids = {it["meta"]["id"] for it in items}
@@ -112,10 +113,10 @@ def _run(argv, workdir, log_path, timeout):
             return subprocess.run(argv, cwd=workdir, stdout=log, stderr=subprocess.STDOUT,
                                   stdin=subprocess.DEVNULL, timeout=timeout).returncode
         except subprocess.TimeoutExpired:
-            log.write(f"超过 {timeout:g} 秒，已停止\n")
+            log.write(pick(f"超过 {timeout:g} 秒，已停止\n", f"Ran longer than {timeout:g} s, stopped\n"))
             return -1
         except OSError as e:
-            log.write(f"启动失败：{e}\n")
+            log.write(pick(f"启动失败：{e}\n", f"Could not start: {e}\n"))
             return -1
 
 
@@ -166,7 +167,8 @@ def spawn_detached(argv, log_path):
     else:
         kwargs["start_new_session"] = True
     with open(log_path, "a", encoding="utf-8") as log:
-        log.write(f"\n===== {util.iso(util.utcnow())} 发信方这一轮结束，开始叫醒\n")
+        log.write(f"\n===== {util.iso(util.utcnow())} "
+                  + pick("发信方这一轮结束，开始叫醒", "the sender's turn ended; waking the reader") + "\n")
         log.flush()
         return subprocess.Popen(argv, stdout=log, **kwargs)
 
@@ -181,18 +183,31 @@ def watch(ledger, seat, interval, dry_run=False, say=print):
         time.sleep(interval)
 
 
+def _letters(n):
+    return f"{n} letter" + ("" if n == 1 else "s")
+
+
 def describe(r):
     action = r["action"]
     if action == "idle":
-        return f"{r['seat']}：没有要叫醒它的信"
+        return pick(f"{r['seat']}：没有要叫醒它的信", f"{r['seat']}: no letters to wake it for")
     if action == "busy":
-        return f"{r['seat']}：已经有一次叫醒在跑，这次跳过"
+        return pick(f"{r['seat']}：已经有一次叫醒在跑，这次跳过",
+                    f"{r['seat']}: a wake is already running; skipping this one")
     if action == "waiting":
-        return f"{r['seat']}：有 {r['pending']} 封待办信，发信方这一轮还没结束，先等着"
+        return pick(f"{r['seat']}：有 {r['pending']} 封待办信，发信方这一轮还没结束，先等着",
+                    f"{r['seat']}: {_letters(r['pending'])} needing action, but the sender's turn has not "
+                    "ended yet; waiting")
     if action == "queued":
-        return f"{r['seat']}：{r['ready']} 封待办信已经排队，下次有人开会话时提示（这个岗位没开自动叫醒）"
+        return pick(f"{r['seat']}：{r['ready']} 封待办信已经排队，下次有人开会话时提示（这个岗位没开自动叫醒）",
+                    f"{r['seat']}: {_letters(r['ready'])} needing action, queued for the next session "
+                    "(autowake is off for this seat)")
     if action == "over_budget":
-        return f"{r['seat']}：今天已叫醒 {r['used']} 次，到了每天 {r['budget']} 次的上限，信先排队"
+        return pick(f"{r['seat']}：今天已叫醒 {r['used']} 次，到了每天 {r['budget']} 次的上限，信先排队",
+                    f"{r['seat']}: already woken {r['used']} time{'' if r['used'] == 1 else 's'} today, the "
+                    f"daily limit is {r['budget']}; the letters stay queued")
     if action == "dry_run":
-        return f"{r['seat']}：会叫醒它处理 {r['ready']} 封信，命令：{' '.join(r['argv'][:6])} …"
-    return f"{r['seat']}：已叫醒，处理 {r['ready']} 封信，返回码 {r.get('returncode')}"
+        return pick(f"{r['seat']}：会叫醒它处理 {r['ready']} 封信，命令：{' '.join(r['argv'][:6])} …",
+                    f"{r['seat']}: would wake it for {_letters(r['ready'])}, command: {' '.join(r['argv'][:6])} …")
+    return pick(f"{r['seat']}：已叫醒，处理 {r['ready']} 封信，返回码 {r.get('returncode')}",
+                f"{r['seat']}: woken for {_letters(r['ready'])}, exit code {r.get('returncode')}")

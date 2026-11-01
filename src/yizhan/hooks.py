@@ -13,6 +13,7 @@ import traceback
 
 from . import adapters, brief, mail, sync, util, wake
 from . import ledger as ledger_mod
+from .i18n import pick
 
 ERROR_LOG_MAX = 1_000_000      # bytes; keep the local error log from growing without end
 
@@ -49,7 +50,7 @@ def _handle(agent, event, payload):
     try:
         prof = led.resolve_seat(cwd=payload.get("cwd") or os.getcwd(), agent=agent)
     except util.YizhanError as e:
-        return f"【驿站】{e}" if event == "SessionStart" else None
+        return pick(f"【驿站】{e}", f"[yizhan] {e}") if event == "SessionStart" else None
     if prof is None:
         return None                                    # this folder is not part of the ledger
     seat, session = prof["address"], str(payload.get("session_id") or "")
@@ -59,7 +60,9 @@ def _handle(agent, event, payload):
         try:
             sync.pull_only(led, timeout=10)
         except util.YizhanError as e:
-            note = f"拉取别的机器的新内容失败（{e}），下面按本机已有的内容。"
+            note = pick(f"拉取别的机器的新内容失败（{e}），下面按本机已有的内容。",
+                        f"Could not pull new changes from the other machines ({e}); what follows is what this "
+                        "machine already has.")
         mail.touch(led, seat)
         return brief.session_brief(led, prof, budget, session=session, note=note)
     if event in ("UserPromptSubmit", "PostToolUse"):

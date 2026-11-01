@@ -20,11 +20,14 @@ import sys
 from pathlib import Path
 
 from . import gitio, util
+from .i18n import pick
 from .util import YizhanError
 
 SHARED = "*shared*"
 DECISION_RE = re.compile(r"^(\d{8})_([a-z0-9][a-z0-9-]{0,39})@([a-z0-9][a-z0-9-]{0,39})_(.+)\.md$")
 AGENT_KINDS = ("claude", "codex")
+# What an otherwise empty folder may hold and still become a new ledger.
+IGNORABLE = (".git", ".DS_Store", "Thumbs.db", "desktop.ini")
 WAKE_MODES = ("queue", "exec")
 
 DEFAULTS = {
@@ -74,14 +77,48 @@ CHARTER = """# {title}
 - 本文件由 {machine} 维护，别的机器要改，写信给它。
 """
 
+LEDGER_README_EN = """# yizhan ledger
+
+This is a shared yizhan ledger; every machine keeps a clone. There is only one rule: **every file has exactly one writing machine**.
+
+| Path | Written by |
+|---|---|
+| `seats/<seat>@<machine>/` | that machine (the seat's sessions) |
+| `machines/<machine>/` | that machine |
+| `projects/<project>/project.json`, `README.md` | the project's owner machine |
+| `projects/<project>/decisions/<date>_<seat>@<machine>_<title>.md` | the machine named in the file name |
+| `yizhan.json` and the other files at the top level | shared: tell the other machines before you change one, and sync with `--allow-shared` |
+
+Before it commits, `yizhan sync` checks this rule and also looks for likely secrets and oversized files; any finding blocks the whole batch.
+Raw data stays out of the ledger: only text goes in here.
+"""
+
+CHARTER_EN = """# {title}
+
+{summary}
+
+## Goals
+
+## How the work is divided
+
+Each seat's duty is in its own `seats/<seat>/profile.json`; `yizhan roster --project {name}` shows them all together.
+Write only the principles here, for example which kind of work goes to which seat and who reviews whom.
+
+## Conventions
+
+- Decisions go into `decisions/`, one file each. Nobody edits a decision someone else wrote; to disagree, write a new one that names the decision it supersedes.
+- {machine} maintains this file; other machines that want a change write to it.
+"""
+
 
 class Ledger:
     def __init__(self, root, machine):
         self.root = Path(root).expanduser().resolve()
-        self.machine = util.check_name(machine, "机器名")
+        self.machine = util.check_name(machine, pick("机器名", "machine name"))
         cfg = self.root / "yizhan.json"
         if not cfg.is_file():
-            raise YizhanError(f"{self.root} 不是驿站账本：缺 yizhan.json")
+            raise YizhanError(pick(f"{self.root} 不是驿站账本：缺 yizhan.json",
+                                   f"{self.root} is not a yizhan ledger: yizhan.json is missing"))
         self.settings = dict(DEFAULTS)
         self.settings.update(util.read_json(cfg, {}) or {})
         self.tz = util.parse_offset(self.settings["timezone"])
@@ -122,7 +159,7 @@ class Ledger:
     # ---------- projects ----------
 
     def project_dir(self, name):
-        util.check_name(name, "项目名")
+        util.check_name(name, pick("项目名", "project name"))
         return self.root / "projects" / name
 
     def project(self, name):
@@ -142,14 +179,15 @@ class Ledger:
     def add_project(self, name, title="", summary=""):
         d = self.project_dir(name)
         if (d / "project.json").exists():
-            raise YizhanError(f"项目 {name} 已经有了")
+            raise YizhanError(pick(f"项目 {name} 已经有了", f"Project {name} already exists"))
         data = {"name": name, "title": title or name, "summary": summary,
                 "owner_machine": self.machine, "created": util.iso(util.utcnow())}
         with self.lock():
             util.write_json(d / "project.json", data)
-            util.write_text_atomic(d / "README.md", CHARTER.format(
+            util.write_text_atomic(d / "README.md", pick(CHARTER, CHARTER_EN).format(
                 title=data["title"], name=name, machine=self.machine,
-                summary=summary or "（写一两句：这个项目要做成什么。）"))
+                summary=summary or pick("（写一两句：这个项目要做成什么。）",
+                                        "(One or two sentences: what this project should achieve.)")))
         return data
 
     # ---------- seats ----------
@@ -179,9 +217,12 @@ class Ledger:
         _, machine = util.parse_address(address)
         prof = self.seat(address)
         if prof is None:
-            raise YizhanError(f"驿站里还没有 {address} 这个岗位，先用 yizhan seat add 登记")
+            raise YizhanError(pick(f"驿站里还没有 {address} 这个岗位，先用 yizhan seat add 登记",
+                                   f"There is no seat {address} in the ledger yet; register it with yizhan seat add"))
         if local and machine != self.machine:
-            raise YizhanError(f"{address} 不在本机（本机是 {self.machine}），只能用本机岗位的身份写东西")
+            raise YizhanError(pick(f"{address} 不在本机（本机是 {self.machine}），只能用本机岗位的身份写东西",
+                                   f"{address} is not on this machine ({self.machine}); you can only act as a seat "
+                                   "on this machine"))
         return prof
 
     def resolve_seat(self, explicit=None, cwd=None, agent=None):
@@ -202,27 +243,34 @@ class Ledger:
                     elif n == best_len and prof["address"] != best["address"]:
                         ties.append(prof)
         if len(ties) > 1:
-            names = "、".join(t["address"] for t in ties)
-            raise YizhanError(f"这个文件夹同时登记给了 {names}，请用 --as 指明身份")
+            names = pick("、", ", ").join(t["address"] for t in ties)
+            raise YizhanError(pick(f"这个文件夹同时登记给了 {names}，请用 --as 指明身份",
+                                   f"This folder is registered to more than one seat ({names}); use --as to say "
+                                   "which one you are"))
         return best
 
     def add_seat(self, name, agent, title="", duty="", projects=(), paths=(), owns=(),
                  wake=None, workdir=None, command=None):
         """Register or update a seat on this machine. Empty arguments keep old values."""
-        util.check_name(name, "岗位名")
+        util.check_name(name, pick("岗位名", "seat name"))
         if agent not in AGENT_KINDS:
-            raise YizhanError(f"暂时只支持这几家 AI：{'、'.join(AGENT_KINDS)}")
+            raise YizhanError(pick(f"暂时只支持这几家 AI：{'、'.join(AGENT_KINDS)}",
+                                   f"Only these AIs are supported for now: {', '.join(AGENT_KINDS)}"))
         if wake is not None and wake not in WAKE_MODES:
-            raise YizhanError(f"叫醒方式只能是 {'、'.join(WAKE_MODES)}")
+            raise YizhanError(pick(f"叫醒方式只能是 {'、'.join(WAKE_MODES)}",
+                                   f"The wake mode must be one of {', '.join(WAKE_MODES)}"))
         for p in projects:
             if self.project(p) is None:
-                raise YizhanError(f"没有 {p} 这个项目，先用 yizhan project add 建")
+                raise YizhanError(pick(f"没有 {p} 这个项目，先用 yizhan project add 建",
+                                       f"There is no project called {p}; create it with yizhan project add first"))
         address = f"{name}@{self.machine}"
         path = self.seat_dir(address) / "profile.json"
         with self.lock():
             old = util.read_json(path, {}) or {}
             if old and old.get("agent") != agent:
-                raise YizhanError(f"{address} 原来登记的是 {old.get('agent')}，不能改成 {agent}；换个岗位名")
+                raise YizhanError(pick(f"{address} 原来登记的是 {old.get('agent')}，不能改成 {agent}；换个岗位名",
+                                       f"{address} was registered as {old.get('agent')} and cannot change to "
+                                       f"{agent}; use another seat name"))
             prof = dict(old)            # keep fields set elsewhere, such as autowake
             prof.update({
                 "address": address, "name": name, "machine": self.machine, "agent": agent,
@@ -305,7 +353,9 @@ def open_local(required=True):
     root, machine = local_config()
     if not root or not machine:
         if required:
-            raise YizhanError("本机还没接入驿站。先运行：yizhan init <账本目录> --machine <本机名>")
+            raise YizhanError(pick("本机还没接入驿站。先运行：yizhan init <账本目录> --machine <本机名>",
+                                   "This machine is not connected to a yizhan ledger yet. First run: "
+                                   "yizhan init <ledger-folder> --machine <machine-name>"))
         return None
     try:
         return Ledger(root, machine)
@@ -315,19 +365,31 @@ def open_local(required=True):
         return None
 
 
-def save_local_config(root, machine):
+def save_local_config(root, machine, **extra):
+    """Point this machine at a ledger. Other settings in the file, such as "lang", stay;
+    `extra` sets more of them (a value of None leaves that setting alone)."""
     path = util.config_home() / "local.json"
     old = util.read_json(path, {}) or {}
-    util.write_json(path, {"ledger": str(root), "machine": machine})
+    data = dict(old) if isinstance(old, dict) else {}
+    data.update({"ledger": str(root), "machine": machine})
+    data.update({k: v for k, v in extra.items() if v is not None})
+    util.write_json(path, data)
     return old if old and (old.get("ledger") != str(root) or old.get("machine") != machine) else None
 
 
 def create_or_join(path, machine, timezone=None, remote=None):
     """Create a new ledger, or join an existing clone. Returns (ledger, created)."""
-    util.check_name(machine, "机器名")
+    util.check_name(machine, pick("机器名", "machine name"))
     root = Path(path).expanduser().resolve()
     created = False
     if not (root / "yizhan.json").is_file():
+        # A new ledger writes README.md, .gitignore and more: never on top of someone's files.
+        others = sorted(p.name for p in root.iterdir() if p.name not in IGNORABLE) if root.is_dir() else []
+        if others:
+            shown = ", ".join(others[:5]) + (" …" if len(others) > 5 else "")
+            raise YizhanError(pick(f"{root} 不是驿站账本，里面已经有别的文件（{shown}）。账本要放在空文件夹或空仓库里，这里什么都没改。",
+                                   f"{root} is not a yizhan ledger and already holds other files ({shown}). A ledger "
+                                   "needs an empty folder or an empty repository; nothing was changed."))
         root.mkdir(parents=True, exist_ok=True)
         if not gitio.is_repo(root):
             gitio.init(root)
@@ -337,10 +399,11 @@ def create_or_join(path, machine, timezone=None, remote=None):
         util.write_json(root / "yizhan.json", settings)
         util.write_text_atomic(root / ".gitattributes", "* text=auto eol=lf\n")
         util.write_text_atomic(root / ".gitignore", ".tmp-*\n.DS_Store\nThumbs.db\n")
-        util.write_text_atomic(root / "README.md", LEDGER_README)
+        util.write_text_atomic(root / "README.md", pick(LEDGER_README, LEDGER_README_EN))
         created = True
     elif not gitio.is_repo(root):
-        raise YizhanError(f"{root} 里有 yizhan.json，却不是 git 仓库")
+        raise YizhanError(pick(f"{root} 里有 yizhan.json，却不是 git 仓库",
+                               f"{root} has a yizhan.json but is not a git repository"))
     if remote and not gitio.has_remote(root):
         gitio.git(root, "remote", "add", "origin", remote)
     ledger = Ledger(root, machine)

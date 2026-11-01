@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from yizhan import ledger as ledger_mod  # noqa: E402
+from yizhan import i18n  # noqa: E402
 from yizhan import sync  # noqa: E402
 
 
@@ -29,6 +30,7 @@ class Sandbox(unittest.TestCase):
         env = {
             "YIZHAN_HOME": str(self.tmp / "home"),
             "YIZHAN_STATE": str(self.tmp / "state"),
+            "YIZHAN_LANG": "zh",
             "CLAUDE_CONFIG_DIR": str(self.tmp / "claude"),
             "CODEX_HOME": str(self.tmp / "codex"),
             "GIT_CONFIG_GLOBAL": os.devnull,
@@ -40,6 +42,7 @@ class Sandbox(unittest.TestCase):
         }
         self._env = mock.patch.dict(os.environ, env)
         self._env.start()
+        i18n.reset()
         for key in ("YIZHAN_LEDGER", "YIZHAN_MACHINE", "YIZHAN_SEAT",
                     "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME",
                     "GIT_COMMITTER_EMAIL", "EMAIL"):
@@ -47,6 +50,7 @@ class Sandbox(unittest.TestCase):
 
     def tearDown(self):
         self._env.stop()
+        i18n.reset()
         shutil.rmtree(self.tmp, onerror=_force_remove)
 
     def folder(self, name):
