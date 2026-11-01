@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yizhan"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Let Claude Code and Codex on all your computers work as one team: letters, receipts and decisions carried by a plain git repository."
 readme = "README.md"
 requires-python = ">=3.9"

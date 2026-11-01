@@ -5,4 +5,4 @@ projects like processes on one computer: each keeps its own files and memory,
 everyone sees who is responsible for what, they exchange letters, and every file
 in the shared ledger has exactly one writer.
 """
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"
