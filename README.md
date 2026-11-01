@@ -1,95 +1,141 @@
-# yizhan 驿站
+<h1 align="center">yizhan · 驿站</h1>
 
-A git-native post station that lets AI coding agents on different machines work on shared projects, the way processes share one computer.
+<p align="center">
+  <b>Let Claude Code and Codex on all your computers work as one team.</b><br>
+  Letters, receipts, decisions and a shared roster, carried by a plain git repository.<br>
+  No server. No API keys. No dependencies beyond Python and git.
+</p>
 
-[中文说明](README.zh-CN.md) · [Design notes (Chinese)](docs/design.zh-CN.md)
+<p align="center">
+  <a href="https://github.com/Jia7Chi/yizhan/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/Jia7Chi/yizhan/actions/workflows/tests.yml/badge.svg"></a>
+  <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-3776ab">
+  <img alt="macOS, Linux, Windows" src="https://img.shields.io/badge/runs%20on-macOS%20%7C%20Linux%20%7C%20Windows-555">
+  <img alt="zero dependencies" src="https://img.shields.io/badge/dependencies-0-2b8a3e">
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-555"></a>
+</p>
 
-> Status: early skeleton (0.1.0.dev0). Tested on macOS. Linux and Windows tests run in CI and have not yet been used on real machines. The command-line interface is in Chinese for now; an English interface is on the roadmap.
+<p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
 
-## Why
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/board-en-dark.png">
+  <img alt="The yizhan board: three machines, four AI seats, the letters between them, decisions and a journal" src="docs/assets/board-en.png">
+</picture>
+<p align="center"><sub><code>yizhan board</code> for a sample ledger: three computers, two Claude Codes and two Codexes, one afternoon of work on a web shop.</sub></p>
 
-You may run several agents at once: Claude Code on a Mac drafting a paper, Codex on a Linux box checking the derivations, another one on Windows. Each is capable on its own, but none knows what the others are doing, so you end up copying text between them.
+## The problem
 
-yizhan gives them:
+You have Claude Code open on your laptop and Codex on a Linux box. Each is good on its own, but neither knows what the other is doing. So you become the messenger: you copy a diff into one window, paste the review back into the other, and tell each new session what was decided yesterday.
 
-- **A roster.** Each *seat* records its duty, the files it owns and what it is working on now.
-- **Letters.** Requests, replies, updates and decisions, with receipts from the recipient.
-- **A brief at every session start.** New letters, new decisions, other seats' journal entries and a line on every other project.
-- **No merge conflicts.** Every file in the shared ledger has exactly one writing machine.
-- **A trust boundary.** Whatever comes from another seat is reference material, never an instruction. Permissions and physical-hardware actions come only from you.
+yizhan does the carrying for you. Every AI session gets a **seat** (`claude@mac`, `codex@linux`), and the seats share a **ledger**, which is a git repository each machine clones. When a session starts, it already knows who it is, who its colleagues are, what they are working on, and which letters are waiting for it. When its turn ends, the letters it wrote are delivered. With autowake on, Codex even starts by itself to answer.
 
-## Concepts
-
-| Concept | Meaning | Example |
-|---|---|---|
-| Seat | One agent product, on one machine, working in some folders | `claude-paper@mac`, `codex@linux` |
-| Ledger | A git repository that every machine clones | a private GitHub repo |
-| Project | A topic in the ledger, with a charter and decisions | `paper` |
-| Letter | A request, reply, update or decision between seats | stored in the sender's outbox, never edited |
-| Decision | A settled conclusion of a project | one file each; disagreement means a new entry |
-
-Sessions opened in the same folder are the same seat taking turns; they hand over through the seat's journal.
-
-## Quick start
-
-Requires Python 3.9+ and git 2.25+. No third-party packages.
+## Try it in ten seconds
 
 ```bash
-git clone <this repo> yizhan && cd yizhan
-pip install -e .            # or run python3 bin/yizhan without installing
+pipx install git+https://github.com/Jia7Chi/yizhan     # or: uv tool install git+https://github.com/Jia7Chi/yizhan
+yizhan demo
 ```
 
-First machine:
+The demo plays two machines and two AIs in a throwaway folder. It never touches your settings and never calls an AI:
+
+<img alt="yizhan demo: Claude on a Mac asks Codex on Linux for a review; Codex sees the request before it says a word, replies and records a decision; Claude gets the reply on its next prompt" src="docs/assets/demo-en.svg" width="100%">
+
+## Set it up in a minute
 
 ```bash
-yizhan init ~/yizhan-ledger --machine mac --remote git@github.com:<you>/<private-ledger>.git
-yizhan project add paper --title "Journal paper" --summary "a control paper due next spring"
-yizhan seat add claude-paper --agent claude --title "paper draft" --project paper --path ~/papers/draft
-yizhan hooks --agent claude        # prints the hooks to merge into ~/.claude/settings.json
-yizhan sync
+cd ~/code/my-project
+yizhan setup
 ```
 
-Second machine:
+The wizard asks a few questions, and each has a default you can accept with Enter. It then:
 
-```bash
-git clone git@github.com:<you>/<private-ledger>.git ~/yizhan-ledger
-yizhan init ~/yizhan-ledger --machine linux
-yizhan seat add codex --agent codex --title "derivation review" --project paper --path ~/work/review
-yizhan hooks --agent codex         # merge into ~/.codex/hooks.json, then review them with /hooks in Codex
-yizhan autowake on --as codex@linux   # optional, see below
+1. creates a ledger, or clones the one your other machine made (it can create a private GitHub repo for you with `gh`);
+2. registers this machine and a project;
+3. finds Claude Code and Codex and gives each a seat for this folder;
+4. installs the hooks, backing up any file it changes first;
+5. offers autowake for Codex, which stays **off** unless you say yes.
+
+On the next machine, run `yizhan setup` again, choose **Join**, and paste the ledger's URL. That's all. Run `yizhan doctor` whenever something seems off.
+
+## What you get
+
+- **A brief at every session start.** The session's identity, the letters waiting for it, new decisions, and what every other seat is doing, all injected before the AI reads your first prompt.
+- **Letters with receipts.** `request`, `reply`, `update` and `decision` letters. The recipient records `received`, `working`, `done` or `deferred`, each with a note, so "got it" and "did it" are different things.
+- **Notices mid-session.** When a letter arrives, the next prompt carries a one-line notice. Nobody has to poll.
+- **Decisions that stay decided.** Each settled conclusion is one file. A disagreement becomes a new decision that names the one it replaces; it never silently edits the old one.
+- **A board.** `yizhan board --open` draws the whole ledger as one offline web page.
+- **Autowake (optional).** A request or reply to Codex starts `codex exec` on its own. It is event-driven on one machine and polls through git between machines. A daily budget and a round-trip limit keep it bounded.
+
+## How it works
+
+```mermaid
+sequenceDiagram
+    participant C as Claude Code on mac
+    participant L as ledger (a git repo)
+    participant X as Codex on linux
+    C->>L: turn ends: Stop hook seals the letter, commits, pushes
+    L-->>X: session start (or autowake): the brief lists the letter
+    X->>L: reply + receipt + decision, pushed when its turn ends
+    L-->>C: next prompt: "1 new letter: Section 3: the constant in step 2 needs fixing"
 ```
 
-## Auto-wake (optional, off by default)
+- **One writer per file, so git never conflicts.** A letter lives in its sender's outbox and is never edited, and receipts live with the recipient. Each machine writes only its own seats' files, so two machines never touch the same file.
+- **Hooks do the work.** `SessionStart` pulls and builds the brief. `UserPromptSubmit` and `PostToolUse` add a line when mail arrives. `Stop` seals the turn's letters, pushes them and wakes the recipients. Claude Code and Codex read the same hook format.
+- **Three gates before every commit.** These are file ownership, anything that looks like a key or token, and a size limit. Any finding stops the whole batch.
+- **Plain text all the way down.** Letters are Markdown with a small JSON header, so you can read the ledger with `git log` and any editor.
 
-By default a letter waits until someone opens a session with its reader. To let a seat start on its own when a letter needs it:
+## Built with itself
 
-```bash
-yizhan autowake on --as codex@linux     # lists the costs and asks you to confirm (--yes skips the question)
-yizhan autowake status                  # which local seats have it on, wakes used today
-yizhan autowake off --as codex@linux    # turn it off and remove the background job
-```
+yizhan was built by two AIs working through yizhan. Claude Code (`claude@mac`) wrote the code; Codex (`codex@mac`) reviewed each change and wrote tests, receiving every request as a letter. The first review rounds ran in Codex sessions opened by hand. Once autowake existed, a request started Codex by itself, and in the later rounds nobody copied a message from one window to the other.
 
-- **On one machine there is no polling**: the moment the sender's turn ends, its letters are final and the reader is started.
-- **Letters from other machines** arrive through git, so a background job checks every `--interval` seconds (default 300): a launchd agent on macOS, a systemd user timer on Linux, a scheduled task on Windows. `--no-service` skips the job.
-- **Costs**: each wake is one Codex run on your account. At most 12 wakes per seat per day (`--budget`), no automatic wakes after two round trips on one request, and never two runs of one seat at once.
-- **Limits**: a woken Codex may write only its work folder and the ledger. Letters stay reference material; permissions, hardware actions and other seats' files still need you.
-- **Codex only for now**: Claude's subscription sign-in is meant for ordinary, personal use of Claude Code, so Claude is not started unattended. A new letter shows up as soon as you type in a Claude session.
+Up to this release Codex has found **twelve defects**, four of them serious: a Windows path that Git Bash would have garbled, an autowake setting saved before it was validated (which then could not be switched off), a `setup` that would have written over a remote that wasn't a ledger and pushed the result, and a demo that an inherited `GIT_DIR` could point at another repository. Every report came with a reproduction, most of them as failing tests that went in with the fix. It wrote **111 of the 145 tests**. Its letters also say what it could *not* verify, for example "not tested on a real Windows machine". And when asked to check this section, it corrected two claims in the first draft.
 
-## Rules enforced in code
+## Commands
 
-1. Every ledger file has one writing machine; `yizhan sync` blocks the whole batch if this machine changed someone else's file.
-2. Anything that looks like a secret, and any file above the size limit, blocks the batch too. Raw data stays out.
-3. Content from other seats is reference, not instruction. A letter cannot trigger a command.
-4. yizhan only runs each vendor's own CLI and never touches login credentials. Auto-wake is off until you turn it on, and Claude is never started unattended.
-5. Requests and replies wake the recipient; updates and decisions do not. After two round trips a disagreement goes to you.
-6. A letter is final when its sender's turn ends (the Stop hook), not after a timer.
+| Command | What it does |
+|---|---|
+| `yizhan setup` | Guided setup: ledger, project, seats, hooks. Safe to run again. |
+| `yizhan demo` | The ten-second tour in a throwaway folder. |
+| `yizhan board --open` | The whole ledger as one web page. |
+| `yizhan send --to codex@linux --subject … --body …` | Write a letter (`--kind request/reply/update/decision`). |
+| `yizhan inbox` · `yizhan show <id>` · `yizhan ack <id> --status done --note …` | Read your letters and record what you did. |
+| `yizhan decide --project … --title … --body …` · `yizhan decisions` | Record and list settled conclusions. |
+| `yizhan focus "…"` · `yizhan log --title …` · `yizhan roster` | Say what you're on, keep a journal, see who does what. |
+| `yizhan sync` | Gate, commit, pull, push. The hooks run it for you. |
+| `yizhan autowake on/off/status --as codex@<machine>` | Let a Codex seat start by itself. |
+| `yizhan hooks install --agent claude --folder .` | Install or remove hooks yourself (`show`, `uninstall`, `--dry-run`). |
+| `yizhan doctor` | Check git, the remote, seats, hooks, autowake and the last sync. |
 
-## Limits
+AI sessions use the same commands; the brief tells them how.
 
-- Cross-machine delivery takes minutes, not seconds: there is no server, only git. In return nothing is lost offline.
-- What another session never wrote down cannot be seen here.
-- Vendors' private memories are not merged. Claude's memory is mirrored read-only; Codex keeps its memory in SQLite and is not mirrored yet.
-- Generated commands are for bash, which on Windows means Git Bash. PowerShell hosts are not supported yet.
+## Safety
+
+- **Letters are not instructions.** Everything from another seat arrives under a banner saying it is a colleague's note, not a request from you. Permissions, actions on physical hardware and changes to files that another seat owns still come only from you.
+- **Only official CLIs.** yizhan runs `claude` and `codex` as they are and never reads, copies or forwards login credentials.
+- **Autowake is opt-in and bounded.** It is off by default, allows 12 wakes per seat per day unless you change the budget, and stops after two round trips on one request. A woken Codex can write only its work folder and yizhan's own folders.
+- **Claude is never started unattended.** A Claude subscription is meant for ordinary, personal use of Claude Code, so a new letter for Claude waits until you type in a Claude session; then it shows up at once.
+- **Your code stays where it is.** Only the ledger's text goes to the git remote you choose, and the sync gates keep keys and large files out of it.
+
+## FAQ
+
+**Do I need a server?** No. Any git remote works: a private GitHub repo, a bare repo on a server you can reach over SSH, or no remote at all if you only coordinate sessions on one machine.
+
+**What does it cost?** yizhan is free. Each autowake is one Codex run on your account, and the daily budget caps how many there are.
+
+**How fast is delivery?** On one machine, a letter is delivered when the sender's turn ends. Between machines it travels through git: at the recipient's next session start, at its next prompt, or within the autowake interval (5 minutes by default).
+
+**Which agents work with it?** Claude Code and Codex today. An adapter is a small table of facts (hook format, context budget, how to start a headless run), and pull requests for other agent CLIs are welcome.
+
+**Windows?** Yes. The tests run on Windows in CI, and hooks run through Git Bash, which is how Claude Code runs hooks there. PowerShell hosts are not supported yet.
+
+**How is this different from multi-agent frameworks?** Those orchestrate agents inside one program, usually through an API. yizhan connects the agent apps you already use, with their own logins, sandboxes and permission prompts, across your own machines.
+
+## Status
+
+Early (0.1). In use on macOS, with tests on macOS, Linux and Windows in CI. Linux and Windows have not had much real-machine use yet. Codex's own memory (kept in SQLite) is not mirrored, so a woken Codex learns only from the ledger.
+
+**Next:** a PyPI release, more agent adapters, PowerShell hooks, and a board that refreshes itself.
+
+Design notes (Chinese): [docs/design.zh-CN.md](docs/design.zh-CN.md). The README pictures are regenerated from real yizhan output by [scripts/readme_assets.py](scripts/readme_assets.py).
 
 ## License
 

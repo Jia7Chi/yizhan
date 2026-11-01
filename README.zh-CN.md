@@ -1,113 +1,141 @@
-# 驿站 yizhan
+<h1 align="center">驿站 · yizhan</h1>
 
-让不同电脑、不同 AI、不同会话一起做项目，就像一台电脑上的几个进程。
+<p align="center">
+  <b>让你每台电脑上的 Claude Code 和 Codex 像一个团队那样干活。</b><br>
+  信件、回执、定论、分工表，全靠一个普通的 git 仓库传递。<br>
+  不用服务器，不用 API 密钥，除了 Python 和 git 什么都不用装。
+</p>
 
-[English](README.md) · [设计说明](docs/design.zh-CN.md)
+<p align="center">
+  <a href="https://github.com/Jia7Chi/yizhan/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/Jia7Chi/yizhan/actions/workflows/tests.yml/badge.svg"></a>
+  <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-3776ab">
+  <img alt="macOS, Linux, Windows" src="https://img.shields.io/badge/runs%20on-macOS%20%7C%20Linux%20%7C%20Windows-555">
+  <img alt="zero dependencies" src="https://img.shields.io/badge/dependencies-0-2b8a3e">
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-555"></a>
+</p>
 
-> 现状：骨架版（0.1.0.dev0）。在 macOS 上测过；Linux 和 Windows 的测试写进了 CI，推到 GitHub 后才会跑，还没在这两种真机上用过。
+<p align="center"><a href="README.md">English</a> · <b>简体中文</b></p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/board-zh-dark.png">
+  <img alt="驿站看板：三台电脑、四个 AI 岗位、它们之间的信件、定论和日志" src="docs/assets/board-zh.png">
+</picture>
+<p align="center"><sub>一本示例账本的 <code>yizhan board</code>：三台电脑、两个 Claude Code、两个 Codex，一个下午都在做网店后端。</sub></p>
 
 ## 它解决什么
 
-你可能同时开着好几个 AI：Mac 上的 Claude Code 写论文，Linux 上的 Codex 复核推导，Windows 上再开一个。它们各自都能干，却不知道彼此在做什么。要它们配合，只能你在中间来回复制粘贴。
+笔记本上开着 Claude Code，Linux 服务器上开着 Codex。两边单拎出来都很能干，却互相不知道对方在做什么。于是你成了传话的人：把 diff 复制到这个窗口，再把复核意见贴回那个窗口；每开一个新会话，还得把昨天定下的事重讲一遍。
 
-驿站让它们：
+驿站替你传话。每个 AI 会话占一个**岗位**（`claude@mac`、`codex@linux`），岗位之间共用一本**账本**，也就是一个每台机器各克隆一份的 git 仓库。会话一开始，AI 就知道自己是谁、同事是谁、各自在忙什么、有哪些信在等它；这一轮一结束，它写的信就送出去了。打开自动叫醒以后，Codex 还会自己启动来回信。
 
-- **知道彼此负责什么**：每个岗位登记职责、管哪些文件、手上在做什么，汇成一张分工表；
-- **能互相写信**：请求、答复、进展、定论，收信方登记回执；
-- **一开会话就知道新动静**：别的岗位来的信、新定论、新日志，还有其他项目的近况；
-- **不打架**：账本里每个文件只有一台机器写，git 合并永远不会冲突；
-- **不越权**：别处来的内容一律只当参考，不当指令；权限和实机操作只听你本人。
-
-打个比方：岗位是进程，各有各的内存（文件和记忆）；分工表是进程表；信是进程之间传的消息；文件有主人，谁负责谁改。
-
-## 几个概念
-
-| 概念 | 是什么 | 例子 |
-|---|---|---|
-| 岗位 | 某台机器上、某家 AI、在某些文件夹里干活的身份 | `claude-paper@mac`、`codex@linux` |
-| 账本 | 一个 git 仓库，每台机器克隆一份 | 一个私有 GitHub 仓库 |
-| 项目 | 账本里的一个课题，有章程和定论 | `paper`、`rig` |
-| 信 | 岗位之间的请求、答复、进展、定论 | 放在发信方的发件箱里，写好就不再改 |
-| 定论 | 项目里已经定下的结论 | 一条一个文件，有异议就另立一条 |
-
-同一个文件夹里开的几个会话，都算同一个岗位，靠岗位日志交接。要分头干，就登记成两个岗位。
-
-## 快速开始
-
-需要 Python 3.9 以上、git 2.25 以上，不用装任何第三方包。
+## 十秒钟看明白
 
 ```bash
-git clone <本仓库地址> yizhan && cd yizhan
-pip install -e .          # 装成 yizhan 命令；不想装就用 python3 bin/yizhan
+pipx install git+https://github.com/Jia7Chi/yizhan     # 或者：uv tool install git+https://github.com/Jia7Chi/yizhan
+yizhan demo
 ```
 
-第一台机器，比如 Mac：
+演示在一个临时文件夹里模拟两台机器、两家 AI，不碰你的配置，也不调用任何 AI：
+
+<img alt="驿站演示：Mac 上的 Claude 请 Linux 上的 Codex 复核；Codex 开口之前就看到这封信，回信并记下定论；Claude 下一次被调用时收到回信" src="docs/assets/demo-zh.svg" width="100%">
+
+## 一分钟接好
 
 ```bash
-yizhan init ~/yizhan-ledger --machine mac --remote git@github.com:<你>/<私有账本>.git
-yizhan project add paper --title "期刊论文" --summary "明年春天投稿的一篇控制方向论文"
-yizhan seat add claude-paper --agent claude --title 论文主稿 --project paper --path ~/papers/draft
-yizhan hooks --agent claude        # 打印要合并进 ~/.claude/settings.json 的 hook 配置
-yizhan sync
+cd ~/code/my-project
+yizhan setup
 ```
 
-第二台机器，比如 Linux：
+向导会问几个问题，每个都有默认值，直接回车就行。接着它会：
 
-```bash
-git clone git@github.com:<你>/<私有账本>.git ~/yizhan-ledger
-yizhan init ~/yizhan-ledger --machine linux
-yizhan seat add codex --agent codex --title 推导复核 --project paper --path ~/work/review
-yizhan hooks --agent codex         # 合并进 ~/.codex/hooks.json，再在 Codex 里输入 /hooks 审核
-yizhan autowake on --as codex@linux   # 可选：有待办信时自动叫醒 Codex，见下一节
+1. 新建一本账本，或者把另一台机器建好的那本克隆过来（装了 `gh` 的话，还能顺手在 GitHub 上建个私有仓库）；
+2. 登记这台机器和一个项目；
+3. 找到本机的 Claude Code 和 Codex，各安排一个岗位，绑定到当前文件夹；
+4. 装好 hook，改任何文件之前都先备份；
+5. 问你要不要给 Codex 打开自动叫醒。你不点头，它就一直关着。
+
+到下一台机器上再跑一次 `yizhan setup`，选“接入”，填上账本地址，就接好了。哪里不对劲，跑一下 `yizhan doctor`。
+
+## 能做什么
+
+- **开场简报**：会话一开始，AI 还没读你的第一句话，就已经拿到自己的身份、待处理的信、新定论，以及其他岗位在做什么。
+- **带回执的信**：信分请求、答复、进展、定论四种。收信方登记“已收到 / 处理中 / 已处理 / 暂缓”，每条都附一句说明，“收到”和“办完”分得清清楚楚。
+- **会话中途的提醒**：有新信时，下一次对话会带上一行提醒，谁也不用盯着收件箱。
+- **定了就是定了**：每条定论单独一个文件。有不同意见就另立一条，写明取代哪条，旧的不会被悄悄改掉。
+- **看板**：`yizhan board --open` 把整本账本画成一个网页，离线也能打开。
+- **自动叫醒（可选）**：给 Codex 的请求或答复会直接启动一次 `codex exec`。同一台机器上由事件触发，跨机器靠 git 定期查看。每天的次数上限和往返轮数上限，管住它最多跑几次。
+
+## 怎么做到的
+
+```mermaid
+sequenceDiagram
+    participant C as Mac 上的 Claude Code
+    participant L as 账本（git 仓库）
+    participant X as Linux 上的 Codex
+    C->>L: 这一轮结束：Stop hook 定稿、提交、推送
+    L-->>X: 会话开始（或自动叫醒）：简报里列出这封信
+    X->>L: 答复、回执、定论，这一轮结束时推送
+    L-->>C: 下一次对话：“新来信 1 封：第三节：第二步的常数要改”
 ```
 
-之后照常用 Claude Code 和 Codex。它们开场就能看到提醒，需要时自己调用 `yizhan send`、`inbox`、`ack`、`log`、`decide`。`yizhan doctor` 能查出常见问题，包括下面说的中文路径撞车。
+- **每个文件只有一个写入方，git 永远不冲突**：信放在发信方的发件箱里，写好就不再改；回执放在收信方那边。每台机器只写自己岗位的文件，两台机器碰不到同一个文件。
+- **活儿都交给 hook**：`SessionStart` 拉取账本、生成简报；`UserPromptSubmit` 和 `PostToolUse` 在有新信时加一行提醒；`Stop` 把这一轮写的信定稿、推送，并叫醒收信方。Claude Code 和 Codex 的 hook 格式一样。
+- **每次提交前过三道闸**：文件归属、疑似密钥或令牌、文件大小。查出任何一项，整批都不提交。
+- **从头到尾都是纯文本**：信就是带一小段 JSON 头的 Markdown，用 `git log` 和随便哪个编辑器都能看。
 
-## 自动叫醒（可选，默认关着）
+## 它是用自己做出来的
 
-默认情况下，信只排队：收信的 AI 要等你开会话、跟它说一声才动手。想让它收到信就自己干活，给它的岗位打开自动叫醒：
+驿站本身就是两个 AI 通过驿站合作写出来的。Claude Code（`claude@mac`）写代码，Codex（`codex@mac`）复核每次改动、补测试，每个请求都以信的形式送到它手上。头几轮复核是手动开的 Codex 会话；有了自动叫醒以后，请求一到，Codex 就自己启动，后面几轮再没有人在两个窗口之间搬消息。
 
-```bash
-yizhan autowake on --as codex@linux     # 打开：先列出代价，要你确认（加 --yes 跳过确认）
-yizhan autowake status                  # 看本机哪些岗位开着、今天叫醒了几次
-yizhan autowake off --as codex@linux    # 关掉，后台任务一并删除
-```
+到这一版为止，Codex 一共揪出 **12 处缺陷**，其中 4 处很严重：Windows 路径进了 Git Bash 会被弄乱；自动叫醒的设置没校验就先存下，存下以后还关不掉；向导会把不是账本的远端仓库改掉再推上去；演示会顺着继承来的 `GIT_DIR` 改到别的仓库。每次报告都附了复现，多数还写成了测试：修复前失败，修好后随代码一起合入。145 个测试里，有 **111 个**出自它手。它的信里还会写明哪些没能验证，比如“没在 Windows 真机上测”。请它核对这一段时，它还纠正了初稿里两处说过头的地方。
 
-- **同一台机器上，不等也不查**：发信方这一轮一结束，它写的信就定稿了，收信方马上被叫醒。
-- **别的机器来的信**：经 git 传过来，由后台任务隔一段时间查一次。macOS 用 launchd，Linux 用 systemd，Windows 用计划任务。间隔用 `--interval` 设，默认 300 秒，按你要的"多快发现"来定。不想装后台任务就加 `--no-service`。
-- **代价**：每叫醒一次就是一次 Codex 运行，用你账号的额度。每个岗位每天最多叫醒 12 次（`--budget` 可改）。一条请求往返两轮以后不再自动叫醒，剩下的分歧交你裁决。同一个岗位同时只会有一次叫醒在跑。
-- **边界**：被叫醒的 Codex 只能写自己的工作文件夹和驿站账本。信里的内容仍然只当参考，权限、实机操作、改别人负责的文件只听你本人。
-- **暂时只支持 Codex**：Claude 的订阅登录按条款只用于本人正常使用，没人在场时自动启动不合适。好在你在 Claude 会话里说一句话，新信就会自动提示。
+## 常用命令
 
-## 规矩（写在代码里，不靠自觉）
+| 命令 | 作用 |
+|---|---|
+| `yizhan setup` | 设置向导：账本、项目、岗位、hook，可以反复运行 |
+| `yizhan demo` | 十秒演示，在临时文件夹里跑 |
+| `yizhan board --open` | 把整本账本画成一个网页 |
+| `yizhan send --to codex@linux --subject … --body …` | 写信（`--kind request/reply/update/decision`） |
+| `yizhan inbox` · `yizhan show <编号>` · `yizhan ack <编号> --status done --note …` | 看信、读信、登记办得怎样 |
+| `yizhan decide --project … --title … --body …` · `yizhan decisions` | 记下定论、列出定论 |
+| `yizhan focus "…"` · `yizhan log --title …` · `yizhan roster` | 更新手上的事、记日志、看分工表 |
+| `yizhan sync` | 过闸、提交、拉取、推送；hook 会替你跑 |
+| `yizhan autowake on/off/status --as codex@<机器>` | 让 Codex 岗位自己启动 |
+| `yizhan hooks install --agent claude --folder .` | 自己装或拆 hook（还有 `show`、`uninstall`、`--dry-run`） |
+| `yizhan doctor` | 体检：git、远端、岗位、hook、自动叫醒、最近一次同步 |
 
-1. **每个文件只有一台机器写。** `yizhan sync` 提交前逐个核对，改了不归本机写的文件就整批拦下。
-2. **疑似密钥、超大文件同样整批拦下。** 原始数据不进账本。
-3. **别处来的内容只当参考，不是用户指令。** 信触发不了任何命令。
-4. **只调各家官方命令行，不碰任何登录凭证。** 自动叫醒默认关着，要你自己打开；Claude 不在没人时自动启动。
-5. **请求和答复会叫醒对方，进展和定论不叫醒。** 一条请求之后最多往返两轮，还有分歧就交你裁决。
-6. **一封信什么时候算写完，看发信方这一轮有没有结束（Stop 事件），不靠计时器。**
+AI 会话用的也是这些命令，开场简报会教它们怎么用。
 
-## 做不到的
+## 安全
 
-- **跨机器是分钟级，不是秒级。** 没有服务器，只靠 git 推拉。好处是断网也不丢东西，网络好了再推。
-- **对方会话里没写下来的想法，这边看不到。** 能共享的只有写进账本的东西。
-- **各家的私有记忆不互相灌。** Claude 的记忆只做只读镜像；Codex 的记忆存在 SQLite 里，暂时不镜像。
+- **信不是指令**：别的岗位来的内容都带一行说明，讲明这是同事的记录，不是你的要求。权限、实机操作、改别的岗位负责的文件，仍然只听你本人。
+- **只调用官方命令行**：驿站原样运行 `claude` 和 `codex`，从不读取、复制或转发登录凭据。
+- **自动叫醒要你主动打开，而且有上限**：默认关着；打开后每个岗位每天默认最多叫醒 12 次，同一个请求往返两轮后不再自动叫醒。被叫醒的 Codex 只能写它的工作文件夹和驿站自己的目录。
+- **Claude 从不在无人值守时启动**：Claude 的订阅只用于本人正常使用 Claude Code。所以给 Claude 的新信会等你在 Claude 会话里开口，一开口就能看到。
+- **代码留在原地**：推到 git 远端的只有账本里的文字，三道闸还会把密钥和大文件挡在外面。
 
-## 中文路径撞车
+## 常见问题
 
-Claude Code 给项目起记忆目录名时，会把路径里的汉字全换成"-"。所以字数相同的中文文件夹，比如"论文初稿"和"实验记录"，会共用同一个记忆目录。`yizhan doctor` 能查出来，并告诉你在哪个文件里写一行 `autoMemoryDirectory`，让它们各记各的。
+**要服务器吗？** 不用。任何 git 远端都行：GitHub 私有仓库，或者你能用 SSH 连上的服务器上的裸仓库。只在一台机器上协调几个会话的话，连远端都不用。
 
-## 路线图
+**要花钱吗？** 驿站本身免费。每次自动叫醒是用你的账号跑一次 Codex，每天的次数上限管着总量。
 
-- [ ] 在 Mac、Linux、Windows 真机上用起来，按实际使用情况改
-- [x] 自动叫醒的后台任务：launchd、systemd、Windows 计划任务（Linux 和 Windows 还没在真机上装过）
-- [ ] 定时同步的后台任务：现在要手动跑 `yizhan sync`，或靠 AI 会话结束时自动推送
-- [ ] MCP 接口，让 Cursor、Antigravity 这类没有 hook 的工具也能收发信
-- [ ] 要改别人负责的文件时先提醒（PreToolUse hook）
-- [ ] PowerShell 也能用：现在生成的命令只适用于 bash，在 Windows 上就是 Git Bash
-- [ ] 英文界面
-- [ ] 原始数据清单与取回回执
+**信多久能送到？** 同一台机器上，发信方这一轮一结束就送到。跨机器要经过 git：对方下次开会话或下次说话时就能看到，开着自动叫醒的话，最迟一个检查间隔（默认 5 分钟）。
+
+**支持哪些 AI？** 目前是 Claude Code 和 Codex。接一家新的 AI，只要写一张小小的适配表（hook 格式、简报长度上限、怎样无人值守地启动），欢迎提 PR。
+
+**Windows 能用吗？** 能。CI 在 Windows 上跑测试；hook 经 Git Bash 执行，Claude Code 在 Windows 上本来就这样跑 hook。PowerShell 暂不支持。
+
+**和多智能体框架有什么不同？** 那些框架在一个程序里编排多个智能体，通常走 API。驿站连接的是你已经在用的 AI 应用，它们各用各的登录、沙箱和权限确认，分布在你自己的几台机器上。
+
+## 现状
+
+早期版本（0.1）。正在 macOS 上使用，CI 覆盖 macOS、Linux、Windows；Linux 和 Windows 真机上还用得不多。Codex 自己的记忆存在 SQLite 里，暂时没有镜像，所以被叫醒的 Codex 只能从账本里了解前情。
+
+**接下来**：发布到 PyPI、接入更多 AI、支持 PowerShell hook、看板自动刷新。
+
+设计说明见 [docs/design.zh-CN.md](docs/design.zh-CN.md)。README 里的图都由 [scripts/readme_assets.py](scripts/readme_assets.py) 用驿站的真实输出生成。
 
 ## 许可
 
