@@ -104,7 +104,7 @@ def run(screen=None, keep=True):
         os.environ.clear()
         os.environ.update(saved)
         if not keep:
-            shutil.rmtree(tmp, ignore_errors=True)
+            util.remove_tree(tmp)
     if keep:
         offer_board(sc, tmp)
     return tmp

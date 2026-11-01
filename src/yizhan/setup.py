@@ -12,7 +12,6 @@ import os
 import re
 import shutil
 import socket
-import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -85,15 +84,10 @@ def detect_agents():
 
 def _remove_clone(path, made_folder):
     """Delete a clone this run made: the folder itself if setup created it, otherwise only
-    what the clone put into the empty folder. Git marks some files read-only, which
-    Windows refuses to delete until they are made writable again."""
-    def force(func, p, _info):
-        os.chmod(p, stat.S_IWRITE)
-        func(p)
-    handler = {"onexc": force} if sys.version_info >= (3, 12) else {"onerror": force}
+    what the clone put into the folder, which was empty before."""
     for item in ([path] if made_folder else list(path.iterdir())):
         if item.is_dir() and not item.is_symlink():
-            shutil.rmtree(item, **handler)
+            util.remove_tree(item)
         else:
             item.unlink()
 

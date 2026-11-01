@@ -36,7 +36,9 @@ def run(agent, stdin=None, stdout=None, event=None):
         return 0
     if text:
         out = {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}
-        stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
+        # ASCII only: \\u escapes carry the same text, and the JSON stays intact however the
+        # host decodes our output (a Windows code page such as cp1252, for one).
+        stdout.write(json.dumps(out) + "\n")
         stdout.flush()
     return 0
 

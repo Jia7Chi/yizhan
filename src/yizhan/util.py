@@ -13,6 +13,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import stat
 import sys
 import tempfile
 import time
@@ -150,6 +152,20 @@ def write_text_atomic(path, text):
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
+
+
+def remove_tree(path):
+    """Delete a folder and everything in it, quietly. Git marks its object files
+    read-only, and Windows refuses to delete those until they are writable again;
+    shutil.rmtree(ignore_errors=True) would silently leave them behind."""
+    def force(func, p, _info):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            pass
+    handler = {"onexc": force} if sys.version_info >= (3, 12) else {"onerror": force}
+    shutil.rmtree(path, **handler)
 
 
 def write_json(path, value):
