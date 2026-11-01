@@ -31,9 +31,11 @@ yizhan does the carrying for you. Every AI session gets a **seat** (`claude@mac`
 ## Try it in ten seconds
 
 ```bash
-pipx install git+https://github.com/Jia7Chi/yizhan     # or: uv tool install git+https://github.com/Jia7Chi/yizhan
+pipx install git+https://github.com/Jia7Chi/yizhan
 yizhan demo
 ```
+
+Prefer uv? `uv tool install git+https://github.com/Jia7Chi/yizhan` works too.
 
 The demo plays two machines and two AIs in a throwaway folder. It never touches your settings and never calls an AI:
 

@@ -31,9 +31,11 @@
 ## 十秒钟看明白
 
 ```bash
-pipx install git+https://github.com/Jia7Chi/yizhan     # 或者：uv tool install git+https://github.com/Jia7Chi/yizhan
+pipx install git+https://github.com/Jia7Chi/yizhan
 yizhan demo
 ```
+
+用 uv 的话，`uv tool install git+https://github.com/Jia7Chi/yizhan` 也行。
 
 演示在一个临时文件夹里模拟两台机器、两家 AI，不碰你的配置，也不调用任何 AI：
 
