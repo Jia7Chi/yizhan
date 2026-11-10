@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>驿站 yizhan · 让不同电脑上的不同 AI 组成一个团队</title>
+<meta name="description" content="驿站让 Claude Code、Codex 和 DeepSeek、Qwen 这类命令行 AI 组成一个团队：顶级模型商量方案、派活、验收，便宜模型干活。信件经一个普通的 git 仓库传递，不用服务器。开源，MIT。">
+<meta name="theme-color" content="#0c0d10">
+<meta property="og:type" content="website">
+<meta property="og:title" content="驿站 yizhan · 让不同电脑上的不同 AI 组成一个团队">
+<meta property="og:description" content="顶级模型商量方案、派活、验收，便宜模型干活；信件经一个普通的 git 仓库传递，不用你传话。">
+<meta property="og:url" content="https://jia7chi.github.io/yizhan/">
+<meta property="og:image" content="https://jia7chi.github.io/yizhan/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<style>
+:root {
+  --bg: #0c0d10; --panel: #14161b; --panel2: #1a1d23; --line: #262a31; --line2: #353a43;
+  --ink: #edebe5; --ink2: #cfccc4; --muted: #a29f96; --faint: #6f6c65;
+  --claude: #e8875f; --codex: #3cc3a3; --req: #8ea6ff; --sub: #b39dff; --gold: #e0a84a;
+  --ok: #63c27a; --warn: #e6a640; --seal: #d4553c;
+  --serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Source Han Serif CN", "SimSun", serif;
+  --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); color-scheme: dark; scroll-behavior: smooth; scroll-padding-top: 76px; }
+body {
+  margin: 0; color: var(--ink); font: 400 17px/1.8 var(--sans); letter-spacing: .01em;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background:
+    radial-gradient(1100px 720px at 8% -8%, rgba(142,166,255,.10), transparent 62%),
+    radial-gradient(900px 760px at 104% 18%, rgba(60,195,163,.075), transparent 62%),
+    radial-gradient(900px 700px at 50% 108%, rgba(224,168,74,.06), transparent 60%),
+    var(--bg);
+}
+body::before {               /* dot grid */
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: radial-gradient(rgba(255,255,255,.045) 1.2px, transparent 1.2px);
+  background-size: 34px 34px;
+  -webkit-mask-image: linear-gradient(to bottom, #000, rgba(0,0,0,.35));
+          mask-image: linear-gradient(to bottom, #000, rgba(0,0,0,.35));
+}
+body::after {                /* paper grain */
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .05 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+main, header.top, footer { position: relative; z-index: 1; }
+a { color: inherit; }
+::selection { background: rgba(224,168,74,.35); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+p, li, figcaption { text-wrap: pretty; }
+h1, h2, h3, summary { text-wrap: balance; }
+.nw { display: inline-block; }
+code, pre, kbd { font-family: var(--mono); }
+:not(pre) > code { font-size: .88em; padding: .12em .42em; border-radius: 6px; background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.06); color: var(--ink2); overflow-wrap: anywhere; }
+svg.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+/* grid cells may be narrower than their longest command line, which then scrolls inside its own box */
+.hero .wrap > *, .pain .wrap > *, .mode > *, .see-grid > *, .two > *, .stop > *, .stamps > * { min-width: 0; }
+
+/* ---------- top bar ---------- */
+header.top { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  background: rgba(12,13,16,.72); border-bottom: 1px solid rgba(255,255,255,.06); }
+header.top .wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
+.logo-link { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.logo-link svg { width: 34px; height: 34px; }
+.logo-link b { font: 900 21px/1 var(--serif); letter-spacing: .08em; }
+.logo-link span { font: 500 13px/1 var(--mono); color: var(--muted); letter-spacing: .12em; }
+nav.links { display: flex; gap: 24px; margin-left: auto; font-size: 15px; }
+nav.links a { text-decoration: none; color: var(--muted); transition: color .2s; }
+nav.links a:hover { color: var(--ink); }
+.gh { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; text-decoration: none;
+  border: 1px solid var(--line2); font-size: 14px; color: var(--ink); transition: border-color .2s, background .2s; }
+.gh:hover { border-color: var(--gold); background: rgba(224,168,74,.08); }
+.gh svg { width: 16px; height: 16px; }
+
+/* ---------- hero ---------- */
+.hero { padding: 76px 0 70px; }
+.hero .wrap { display: grid; grid-template-columns: 1.08fr .92fr; gap: 44px; align-items: center; }
+.kicker { display: inline-flex; gap: 10px; align-items: center; margin: 0 0 26px; font: 500 13px/1 var(--mono);
+  letter-spacing: .14em; color: var(--gold); text-transform: uppercase; }
+.kicker::before { content: ""; width: 26px; height: 1px; background: var(--gold); }
+.brand { display: flex; align-items: flex-end; gap: 22px; }
+.brand svg { width: clamp(78px, 9vw, 116px); height: clamp(78px, 9vw, 116px); flex: none; margin-bottom: .14em; }
+.brand h1 { margin: 0; font: 900 clamp(84px, 11.5vw, 152px)/.92 var(--serif); letter-spacing: .05em; }
+.brand .pinyin { align-self: flex-end; margin: 0 0 .9em; font: 500 15px/1 var(--mono); letter-spacing: .32em; color: var(--muted); }
+.hero h2 { margin: 30px 0 16px; font: 700 clamp(25px, 2.8vw, 34px)/1.45 var(--serif); letter-spacing: .03em; }
+.hero .lead { margin: 0 0 30px; color: var(--ink2); font-size: 18px; max-width: 34em; }
+.lead em { font-style: normal; color: var(--ink); border-bottom: 1px dashed rgba(224,168,74,.55); }
+.term { border-radius: 14px; background: #0f1116; border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.45); overflow: hidden; max-width: 560px; }
+.term-bar { display: flex; align-items: center; gap: 7px; padding: 10px 14px; background: #15181e; border-bottom: 1px solid var(--line); }
+.term-bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f4a; }
+.term-bar i:nth-child(1) { background: #e0675c; } .term-bar i:nth-child(2) { background: #e0b04a; } .term-bar i:nth-child(3) { background: #5fbf6a; }
+.term-bar span { margin-left: 8px; font: 500 12px/1 var(--mono); color: var(--faint); }
+.term pre { margin: 0; padding: 16px 18px 18px; font-size: 14.5px; line-height: 1.85; color: #dcd9d2; overflow-x: auto; }
+.p { color: var(--faint); user-select: none; }
+.c { color: var(--faint); }
+.copy { margin-left: auto; font: 500 12px/1 var(--sans); color: var(--muted); background: rgba(255,255,255,.05);
+  border: 1px solid var(--line2); border-radius: 7px; padding: 6px 10px; cursor: pointer; transition: color .2s, border-color .2s; }
+.copy:hover { color: var(--ink); border-color: var(--gold); }
+.copy.done { color: var(--ok); border-color: rgba(99,194,122,.6); }
+.cta { display: flex; flex-wrap: wrap; gap: 14px; margin: 28px 0 14px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 12px; text-decoration: none;
+  font-weight: 600; font-size: 16px; border: 1px solid var(--line2); color: var(--ink); transition: transform .2s, background .2s, border-color .2s; }
+.btn:hover { transform: translateY(-2px); border-color: var(--ink2); }
+.btn.pri { background: var(--gold); border-color: var(--gold); color: #1b1408; }
+.btn.pri:hover { background: #ebb75c; }
+.req { margin: 0; color: var(--faint); font-size: 14px; }
+.hero-art { position: relative; }
+.hero-art svg { width: 100%; height: auto; display: block; }
+.hero-art::before { content: ""; position: absolute; inset: 8% 6%; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(224,168,74,.12), transparent); filter: blur(10px); }
+
+/* ---------- pain ---------- */
+.pain { padding: 34px 0 30px; }
+.pain .wrap { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding-top: 46px; padding-bottom: 46px;
+  display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; }
+.pain .q { margin: 0; font: 700 clamp(26px, 3vw, 38px)/1.45 var(--serif); }
+.pain .q s { text-decoration-color: var(--seal); text-decoration-thickness: 3px; color: var(--muted); }
+.pain .a { margin: 0; color: var(--ink2); font-size: 18px; }
+
+/* ---------- sections ---------- */
+.sec { padding: 96px 0 30px; }
+.sec-title { max-width: 760px; margin-bottom: 54px; }
+.eyebrow { margin: 0 0 14px; font: 500 13px/1 var(--mono); letter-spacing: .2em; color: var(--gold); }
+.sec-title h2 { margin: 0 0 14px; font: 900 clamp(32px, 4vw, 50px)/1.3 var(--serif); letter-spacing: .03em; }
+.sec-title p { margin: 0; color: var(--muted); font-size: 18px; }
+
+.mode { display: grid; grid-template-columns: 1fr 1.02fr; gap: 56px; align-items: center; margin-bottom: 92px; }
+.mode.flip .mode-text { order: 2; }
+.mode-head { display: flex; align-items: center; gap: 18px; margin-bottom: 20px; }
+.seal { flex: none; width: 58px; height: 58px; border-radius: 12px; background: var(--seal); color: #fff3ec;
+  font: 900 31px/58px var(--serif); text-align: center; transform: rotate(-5deg);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.16), 0 10px 26px rgba(212,85,60,.25); }
+.mode-head h3 { margin: 0; font: 900 clamp(26px, 2.6vw, 34px)/1.35 var(--serif); }
+.mode-text > p { margin: 0 0 18px; color: var(--ink2); font-size: 18px; }
+.ticks { list-style: none; margin: 0; padding: 0; }
+.ticks li { position: relative; padding-left: 30px; margin: 0 0 12px; color: var(--ink2); }
+/* a small envelope as the bullet */
+.ticks li::before { content: ""; position: absolute; left: 3px; top: .68em; width: 16px; height: 11px;
+  border: 1.8px solid var(--gold); border-radius: 2.5px; }
+.ticks li::after { content: ""; position: absolute; left: 8px; top: calc(.68em - 1px); width: 6px; height: 6px;
+  border-right: 1.8px solid var(--gold); border-bottom: 1.8px solid var(--gold); transform: rotate(45deg); }
+.mode .note { margin-top: 18px; font-size: 14px; color: var(--faint); }
+.fig-card { position: relative; margin: 0; border-radius: 26px; padding: 8px;
+  background: radial-gradient(520px 420px at 30% 10%, rgba(142,166,255,.08), transparent 70%), #0e1014;
+  border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.45); }
+.fig-card svg { display: block; width: 100%; height: auto; }
+.fig-card figcaption a { color: var(--muted); }
+.fig-card figcaption a:hover { color: var(--ink); }
+.fig-card figcaption { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 4px 12px 8px; color: var(--faint); font-size: 13px; }
+.replay { font: 500 12px/1 var(--sans); color: var(--muted); cursor: pointer;
+  background: rgba(12,13,16,.8); border: 1px solid var(--line2); border-radius: 999px; padding: 8px 12px; transition: color .2s, border-color .2s; }
+.replay:hover { color: var(--ink); border-color: var(--gold); }
+
+/* ---------- see ---------- */
+.see-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 28px; align-items: start; }
+.shot { margin: 0; border-radius: 18px; overflow: hidden; background: var(--panel); border: 1px solid var(--line);
+  box-shadow: 0 30px 80px rgba(0,0,0,.45); }
+.shot .bar { display: flex; align-items: center; gap: 7px; padding: 11px 14px; background: #15181e; border-bottom: 1px solid var(--line); }
+.shot .bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f4a; }
+.shot .bar span { margin: 0 auto; transform: translateX(-20px); font: 500 12px/1 var(--mono); color: var(--faint);
+  background: rgba(255,255,255,.05); padding: 6px 14px; border-radius: 999px; }
+.shot img { display: block; width: 100%; height: auto; }
+.shot figcaption { padding: 18px 20px 20px; color: var(--ink2); font-size: 15.5px; border-top: 1px solid var(--line); }
+.shot figcaption b { display: block; margin-bottom: 6px; font: 700 19px/1.4 var(--serif); color: var(--ink); }
+
+/* ---------- route (quick start) ---------- */
+.route { list-style: none; margin: 0; padding: 0; position: relative; max-width: 920px; }
+.route::before { content: ""; position: absolute; left: 29px; top: 18px; bottom: 30px; border-left: 2px dashed rgba(224,168,74,.38); }
+.stop { position: relative; display: grid; grid-template-columns: 60px 1fr; gap: 24px; margin-bottom: 26px; }
+.dot { position: relative; z-index: 1; width: 60px; height: 60px; border-radius: 50%; background: #121419; border: 2px solid var(--gold);
+  color: var(--gold); display: grid; place-items: center; font: 900 24px/1 var(--serif); box-shadow: 0 0 0 7px var(--bg); }
+.stop-card { background: rgba(20,22,27,.82); border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px 22px; }
+.stop-card .k { margin: 0 0 4px; font: 500 12.5px/1 var(--mono); letter-spacing: .18em; color: var(--gold); }
+.stop-card h3 { margin: 0 0 8px; font: 900 24px/1.4 var(--serif); }
+.stop-card p { margin: 0 0 6px; color: var(--ink2); }
+.stop-card ol, .stop-card ul { margin: 6px 0 4px; padding-left: 1.3em; color: var(--ink2); }
+.stop-card li { margin: 2px 0; }
+.cmd { position: relative; margin: 14px 0 6px; border-radius: 12px; background: #0f1116; border: 1px solid var(--line); }
+.cmd pre { margin: 0; padding: 15px 18px; padding-right: 76px; overflow-x: auto; font-size: 14px; line-height: 1.8; color: #dcd9d2; }
+.cmd .copy { position: absolute; top: 10px; right: 10px; }
+.tip { margin-top: 10px !important; font-size: 14.5px; color: var(--muted) !important; }
+
+/* ---------- stamps (terms) ---------- */
+.stamps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 960px) { .stamps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .stamps { grid-template-columns: 1fr; } }
+.stamp { position: relative; padding: 24px 22px 20px; border-radius: 8px; background: var(--panel);
+  border: 1px solid var(--line); outline: 1px dashed rgba(237,235,229,.15); outline-offset: -9px; overflow: hidden; }
+.stamp::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c, var(--gold)); }
+.stamp .face { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.stamp h3 { margin: 0; font: 900 23px/1.3 var(--serif); }
+.stamp .en { font: 500 11.5px/1 var(--mono); letter-spacing: .16em; color: var(--c, var(--gold)); text-transform: uppercase; }
+.stamp p { margin: 0; color: var(--ink2); font-size: 15.5px; line-height: 1.75; }
+.stamp .pm { position: absolute; right: -16px; bottom: -18px; width: 86px; height: 86px; border-radius: 50%;
+  border: 2px dashed var(--c, var(--gold)); opacity: .18; transform: rotate(-16deg); }
+
+/* ---------- safety, faq ---------- */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.panel { background: rgba(20,22,27,.82); border: 1px solid var(--line); border-radius: 20px; padding: 28px 28px 22px; }
+.panel h3 { margin: 0 0 14px; font: 900 24px/1.4 var(--serif); }
+.panel ul { margin: 0; padding: 0; list-style: none; }
+.panel li { margin: 0 0 14px; color: var(--ink2); }
+.panel li b { color: var(--ink); }
+details { border-top: 1px solid var(--line); padding: 16px 2px; }
+details:last-child { border-bottom: 1px solid var(--line); }
+summary { cursor: pointer; list-style: none; font: 700 18px/1.5 var(--serif); display: flex; justify-content: space-between; gap: 16px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; font: 400 22px/1 var(--mono); color: var(--gold); transition: transform .25s; }
+details[open] summary::after { transform: rotate(45deg); }
+details p { margin: 10px 0 0; color: var(--ink2); }
+.status { margin-top: 28px; padding: 22px 24px; border-radius: 16px; border: 1px dashed rgba(224,168,74,.4); color: var(--ink2); }
+.status b { color: var(--gold); }
+
+/* ---------- footer ---------- */
+footer { margin-top: 90px; padding: 46px 0 56px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14.5px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: center; }
+footer .logo-link svg { width: 30px; height: 30px; }
+footer nav { display: flex; flex-wrap: wrap; gap: 22px; margin-left: auto; }
+footer a { text-decoration: none; }
+footer a:hover { color: var(--ink); }
+
+/* ---------- reveal ---------- */
+.rv { opacity: 0; transform: translateY(22px); transition: opacity .8s ease, transform .8s cubic-bezier(.2,.7,.2,1); transition-delay: var(--d, 0s); }
+.rv.in { opacity: 1; transform: none; }
+.hero .rv { transition-duration: 1s; }
+
+@media (max-width: 960px) {
+  .hero .wrap, .pain .wrap, .mode, .see-grid, .two { grid-template-columns: 1fr; }
+  .mode.flip .mode-text { order: 0; }
+  .mode { gap: 30px; margin-bottom: 70px; }
+  nav.links { display: none; }
+  .gh { margin-left: auto; }
+  .hero { padding-top: 46px; }
+  .hero-art { max-width: 560px; margin: 0 auto; }
+}
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  .wrap { padding: 0 18px; }
+  .brand { gap: 14px; }
+  .brand .pinyin { display: none; }
+  .stop { grid-template-columns: 44px 1fr; gap: 14px; }
+  .dot { width: 44px; height: 44px; font-size: 19px; box-shadow: 0 0 0 5px var(--bg); }
+  .route::before { left: 21px; }
+  .stop-card { padding: 18px 16px; }
+  .cmd pre { font-size: 12.5px; padding-right: 16px; padding-top: 44px; }
+  .term pre { font-size: 12.5px; }
+  .sec { padding-top: 70px; }
+  .logo-link span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .rv { opacity: 1; transform: none; transition: none; }
+}
+</style>
+<noscript><style>.rv { opacity: 1; transform: none; }</style></noscript>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true"><defs>
+  <marker id="h-req" viewBox="0 0 20 20" refX="17" refY="10" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M2 2 L18 10 L2 18 z" fill="#8ea6ff"/></marker>
+  <marker id="h-rep" viewBox="0 0 20 20" refX="17" refY="10" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M2 2 L18 10 L2 18 z" fill="#3cc3a3"/></marker>
+  <marker id="h-ok" viewBox="0 0 20 20" refX="17" refY="10" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M2 2 L18 10 L2 18 z" fill="#63c27a"/></marker>
+  <marker id="h-warn" viewBox="0 0 20 20" refX="17" refY="10" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M2 2 L18 10 L2 18 z" fill="#e6a640"/></marker>
+  <marker id="h-link" viewBox="0 0 20 20" refX="17" refY="10" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M2 2 L18 10 L2 18 z" fill="#8a909c"/></marker>
+  <symbol id="logo" viewBox="0 0 512 512"><g transform="translate(0 -8)" fill="none" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"><path d="M54 176 C98 206 176 200 256 128 C336 200 414 206 458 176" stroke="#edebe5"/><rect x="116" y="246" width="280" height="154" rx="24" stroke="#edebe5"/><path d="M138 268 L256 352" stroke="#edebe5"/><path d="M374 268 L256 352" stroke="#edebe5"/><circle cx="256" cy="352" r="25" fill="#edebe5" stroke="none"/></g></symbol>
+  <symbol id="env" viewBox="0 0 44 30"><rect x="1.5" y="1.5" width="41" height="27" rx="5" fill="currentColor"/><path d="M5 6 L22 17 L39 6" fill="none" stroke="#0c0d10" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+
+  <symbol id="gh" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol>
+</defs></svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo-link" href="#" aria-label="驿站 yizhan 首页"><svg aria-hidden="true"><use href="#logo"/></svg><b>驿站</b><span>yizhan</span></a>
+    <nav class="links" aria-label="页面导航">
+      <a href="#how">怎么协作</a><a href="#see">看得见</a><a href="#start">三分钟上手</a><a href="#terms">几个说法</a><a href="#faq">常见问题</a>
+    </nav>
+    <a class="gh" href="https://github.com/Jia7Chi/yizhan"><svg aria-hidden="true"><use href="#gh"/></svg>GitHub</a>
+  </div>
+</header>
+
+<main>
+<!-- ============ hero ============ -->
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <p class="kicker rv">开源 · MIT · 不用服务器</p>
+      <div class="brand rv" style="--d:.08s">
+        <svg aria-hidden="true"><use href="#logo"/></svg>
+        <h1>驿站</h1>
+        <span class="pinyin">YIZHAN</span>
+      </div>
+      <h2 class="rv" style="--d:.16s"><span class="nw">让不同电脑上的不同 AI，</span><span class="nw">组成一个团队</span></h2>
+      <p class="lead rv" style="--d:.24s">Claude Code 和 Codex 商量方案，DeepSeek、Qwen 这类命令行 AI 接活，答复一到，Codex 自己醒来验收。信件经一个普通的 git 仓库来回，<em>你不用再当传话筒</em>。</p>
+      <div class="term rv" style="--d:.32s">
+        <div class="term-bar"><i></i><i></i><i></i><span>终端</span><button class="copy" data-copy="pipx install git+https://github.com/Jia7Chi/yizhan&#10;yizhan demo">复制</button></div>
+        <pre><span class="p">$ </span>pipx install git+https://github.com/Jia7Chi/yizhan
+<span class="p">$ </span>yizhan demo        <span class="c"># 十秒演示，不碰你的配置</span></pre>
+      </div>
+      <div class="cta rv" style="--d:.4s">
+        <a class="btn pri" href="#start">三分钟上手 ↓</a>
+        <a class="btn" href="https://github.com/Jia7Chi/yizhan">在 GitHub 上看 ↗</a>
+      </div>
+      <p class="req rv" style="--d:.46s">需要 Python 3.9 以上和 git · macOS、Linux、Windows 都能用</p>
+    </div>
+
+    <div class="hero-art rv" style="--d:.2s">
+      <svg id="hero-svg" viewBox="0 0 600 560" role="img" aria-label="信件在 Mac、Linux、Windows 三台电脑和驿站之间来回传递">
+        <g fill="none" stroke="rgba(224,168,74,.4)" stroke-width="2" stroke-dasharray="6 9" stroke-linecap="round">
+          <path d="M120 150 Q150 230 232 258"/>
+          <path d="M480 150 Q450 230 368 258"/>
+          <path d="M300 440 L300 368"/>
+        </g>
+        <!-- letters travel under the station card: they go into the station and come out the other side -->
+        <g>
+          <use href="#env" x="-18" y="-12" width="36" height="24" style="color:#e8875f"/>
+          <animateMotion dur="12s" repeatCount="indefinite" path="M120 150 Q150 230 300 290 Q450 230 480 150" keyPoints="0;.29;.71;1;1" keyTimes="0;.099;.121;.22;1" calcMode="linear"/>
+          <animate attributeName="opacity" dur="12s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;.015;.2;.22;1"/>
+        </g>
+        <g>
+          <use href="#env" x="-18" y="-12" width="36" height="24" style="color:#3cc3a3"/>
+          <animateMotion dur="12s" repeatCount="indefinite" path="M480 150 Q450 230 300 290 Q150 230 120 150" keyPoints="0;0;.29;.71;1;1" keyTimes="0;.25;.349;.371;.47;1" calcMode="linear"/>
+          <animate attributeName="opacity" dur="12s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.25;.265;.45;.47;1"/>
+        </g>
+        <g>
+          <use href="#env" x="-18" y="-12" width="36" height="24" style="color:#3cc3a3"/>
+          <animateMotion dur="12s" repeatCount="indefinite" path="M480 150 Q450 230 300 290 L300 440" keyPoints="0;0;.357;.81;1;1" keyTimes="0;.5;.599;.621;.72;1" calcMode="linear"/>
+          <animate attributeName="opacity" dur="12s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.5;.515;.7;.72;1"/>
+        </g>
+        <g>
+          <use href="#env" x="-18" y="-12" width="36" height="24" style="color:#b39dff"/>
+          <animateMotion dur="12s" repeatCount="indefinite" path="M300 440 L300 290 Q450 230 480 150" keyPoints="0;0;.19;.643;1;1" keyTimes="0;.75;.849;.871;.97;1" calcMode="linear"/>
+          <animate attributeName="opacity" dur="12s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.75;.765;.95;.97;1"/>
+        </g>
+
+        <g>
+          <rect x="195" y="215" width="210" height="150" rx="24" fill="#1d1a12" stroke="#e0a84a" stroke-width="2.5"/>
+          <use href="#logo" x="268" y="224" width="64" height="64"/>
+          <text x="300" y="320" text-anchor="middle" font-family="Songti SC, STSong, Noto Serif CJK SC, SimSun, serif" font-size="27" font-weight="900" fill="#e0a84a" letter-spacing="4">驿站</text>
+          <text x="300" y="346" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="12.5" fill="#a29f96">一个 git 仓库 · 每台电脑一份</text>
+        </g>
+        <g font-family="PingFang SC, Microsoft YaHei, sans-serif">
+          <rect x="20" y="40" width="200" height="112" rx="16" fill="#15171c" stroke="#353a43" stroke-width="1.5"/>
+          <text x="38" y="70" font-size="17" font-weight="600" fill="#edebe5">Mac</text>
+          <rect x="38" y="84" width="122" height="24" rx="12" fill="rgba(232,135,95,.14)" stroke="#e8875f"/>
+          <text x="99" y="101" text-anchor="middle" font-family="SF Mono, Menlo, Consolas, monospace" font-size="12.5" fill="#e8875f">claude@mac</text>
+          <rect x="38" y="116" width="92" height="24" rx="12" fill="rgba(179,157,255,.14)" stroke="#b39dff"/>
+          <text x="84" y="133" text-anchor="middle" font-family="SF Mono, Menlo, Consolas, monospace" font-size="12.5" fill="#b39dff">ds2@mac</text>
+
+          <rect x="380" y="40" width="200" height="112" rx="16" fill="#15171c" stroke="#353a43" stroke-width="1.5"/>
+          <text x="398" y="70" font-size="17" font-weight="600" fill="#edebe5">Linux</text>
+          <rect x="398" y="84" width="130" height="24" rx="12" fill="rgba(60,195,163,.14)" stroke="#3cc3a3"/>
+          <text x="463" y="101" text-anchor="middle" font-family="SF Mono, Menlo, Consolas, monospace" font-size="12.5" fill="#3cc3a3">codex@linux</text>
+
+          <rect x="200" y="440" width="200" height="100" rx="16" fill="#15171c" stroke="#353a43" stroke-width="1.5"/>
+          <text x="218" y="470" font-size="17" font-weight="600" fill="#edebe5">Windows</text>
+          <rect x="218" y="484" width="92" height="24" rx="12" fill="rgba(179,157,255,.14)" stroke="#b39dff"/>
+          <text x="264" y="501" text-anchor="middle" font-family="SF Mono, Menlo, Consolas, monospace" font-size="12.5" fill="#b39dff">ds1@win</text>
+        </g>
+        <!-- postmarks at each arrival -->
+        <g font-family="Songti SC, STSong, SimSun, serif" font-size="12" font-weight="700" fill="#d4553c" text-anchor="middle">
+          <g transform="translate(548 186) rotate(-14)"><circle r="25" fill="none" stroke="#d4553c" stroke-width="1.8" stroke-dasharray="3 3"/><text y="4">已送达</text>
+            <animate attributeName="opacity" dur="12s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.215;.225;.33;.36;1"/></g>
+          <g transform="translate(52 186) rotate(12)"><circle r="25" fill="none" stroke="#d4553c" stroke-width="1.8" stroke-dasharray="3 3"/><text y="4">已送达</text>
+            <animate attributeName="opacity" dur="12s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.465;.475;.58;.61;1"/></g>
+          <g transform="translate(442 498) rotate(-10)"><circle r="25" fill="none" stroke="#d4553c" stroke-width="1.8" stroke-dasharray="3 3"/><text y="4">已送达</text>
+            <animate attributeName="opacity" dur="12s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.715;.725;.83;.86;1"/></g>
+          <g transform="translate(548 186) rotate(-14)"><circle r="25" fill="none" stroke="#d4553c" stroke-width="1.8" stroke-dasharray="3 3"/><text y="4">已送达</text>
+            <animate attributeName="opacity" dur="12s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.965;.975;.985;.995;1"/></g>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ============ pain ============ -->
+<section class="pain">
+  <div class="wrap">
+    <p class="q rv">你还在几个 AI 窗口之间<s>来回复制粘贴</s>吗？</p>
+    <p class="a rv" style="--d:.1s">方案贴给另一个模型挑刺，活儿贴给第三个模型去做，结果再贴回来验收。驿站替你把信送到；Codex 和命令行 AI 收到信，会自己醒来接着干。</p>
+  </div>
+</section>
+
+<!-- ============ how ============ -->
+<section id="how" class="sec">
+  <div class="wrap">
+    <header class="sec-title rv">
+      <p class="eyebrow">怎么协作</p>
+      <h2><span class="nw">三种协作，</span><span class="nw">都不用你搬运</span></h2>
+      <p>每个 AI 会话占一个岗位，大家在驿站里互相写信。下面三张图依次说明：顶级模型怎么商量方案，怎么把活派给别的 AI 再验收，以及换几台电脑为什么也一样。</p>
+    </header>
+
+    <article class="mode">
+      <div class="mode-text rv">
+        <div class="mode-head"><span class="seal" aria-hidden="true">壹</span><h3>顶级模型商量方案</h3></div>
+        <p>Claude Code 出方案、写代码，Codex 挑刺、补测试。两家模型盲点不同，互相挑出来的问题最有用。</p>
+        <ul class="ticks">
+          <li>每封信都经过驿站；这一轮一结束，信就定稿送出。</li>
+          <li>Codex 收到信会自己醒来复核，复核完回信。</li>
+          <li>Claude 不会在没人的时候自己启动，回信等你下次开口时看到。</li>
+          <li>同一件事往返两轮还谈不拢，交你拍板。</li>
+        </ul>
+      </div>
+      <figure class="fig-card rv" style="--d:.1s">
+        <svg class="fig" viewBox="0 370 1080 1130" role="img" aria-label="Claude Code 和 Codex 经驿站来回写信，最后形成完整方案">
+  <g data-at="0.3">
+    <rect x="70" y="400" width="400" height="170" rx="28" fill="#15171c" stroke="#e8875f" stroke-width="3"/>
+    <text x="270" y="478" text-anchor="middle" font-size="52" font-weight="600" fill="#e8875f">Claude Code</text>
+    <text x="270" y="533" text-anchor="middle" font-size="34" fill="#a29f96">出方案 · 写代码</text>
+    <rect x="610" y="400" width="400" height="170" rx="28" fill="#15171c" stroke="#3cc3a3" stroke-width="3"/>
+    <text x="810" y="478" text-anchor="middle" font-size="52" font-weight="600" fill="#3cc3a3">Codex</text>
+    <text x="810" y="533" text-anchor="middle" font-size="34" fill="#a29f96">挑刺 · 补测试</text>
+  </g>
+  <g data-at="0.8">
+    <line x1="270" y1="570" x2="270" y2="1210" stroke="#3a3f4a" stroke-width="3" stroke-dasharray="12 14"/>
+    <line x1="810" y1="570" x2="810" y2="1210" stroke="#3a3f4a" stroke-width="3" stroke-dasharray="12 14"/>
+    <rect x="470" y="600" width="140" height="610" rx="70" fill="rgba(224,168,74,0.07)" stroke="#e0a84a" stroke-width="2" stroke-dasharray="8 10"/>
+    <text x="540" y="676" text-anchor="middle" font-size="34" font-weight="600" fill="#e0a84a">驿站</text>
+  </g>
+  <g data-at="1.4">
+    <text class="halo" x="540" y="750" text-anchor="middle" font-size="32" fill="#b8c6ff">方案 v1</text>
+    <line x1="292" y1="780" x2="800" y2="780" stroke="#8ea6ff" stroke-width="4" marker-end="url(#h-req)"/>
+    <use href="#env" x="518" y="765" width="44" height="30" style="color:#8ea6ff"/>
+  </g>
+  <g data-at="2.4">
+    <text class="halo" x="540" y="880" text-anchor="middle" font-size="32" fill="#8fe0cb">复核：挑出问题</text>
+    <line x1="788" y1="910" x2="280" y2="910" stroke="#3cc3a3" stroke-width="4" marker-end="url(#h-rep)"/>
+    <use href="#env" x="518" y="895" width="44" height="30" style="color:#3cc3a3"/>
+  </g>
+  <g data-at="3.4">
+    <text class="halo" x="540" y="1010" text-anchor="middle" font-size="32" fill="#b8c6ff">改好的 v2</text>
+    <line x1="292" y1="1040" x2="800" y2="1040" stroke="#8ea6ff" stroke-width="4" marker-end="url(#h-req)"/>
+    <use href="#env" x="518" y="1025" width="44" height="30" style="color:#8ea6ff"/>
+  </g>
+  <g data-at="4.4">
+    <text class="halo" x="540" y="1140" text-anchor="middle" font-size="32" fill="#8fe0cb">通过</text>
+    <line x1="788" y1="1170" x2="280" y2="1170" stroke="#3cc3a3" stroke-width="4" marker-end="url(#h-rep)"/>
+    <use href="#env" x="518" y="1155" width="44" height="30" style="color:#3cc3a3"/>
+  </g>
+  <g data-at="5.2">
+    <rect x="170" y="1240" width="740" height="110" rx="32" fill="rgba(99,194,122,0.12)" stroke="#63c27a" stroke-width="3"/>
+    <path d="M384 1296 l18 18 l34 -38" stroke="#63c27a" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="566" y="1313" text-anchor="middle" font-size="52" font-weight="600" fill="#63c27a">完整方案</text>
+  </g>
+  <g data-at="5.8">
+    <text x="540" y="1418" text-anchor="middle" font-size="32" fill="#a29f96">Codex 收信自己醒来 · Claude 等你开口时看到回信</text>
+    <text x="540" y="1466" text-anchor="middle" font-size="32" fill="#a29f96">两轮还谈不拢，交你拍板</text>
+  </g>
+</svg>
+        <figcaption><span>滚到这里，图会自己画一遍 · <a href="assets/fig1.png" target="_blank" rel="noopener">看大图</a></span><button class="replay" type="button">重播 ↻</button></figcaption>
+      </figure>
+    </article>
+
+    <article class="mode flip">
+      <div class="mode-text rv">
+        <div class="mode-head"><span class="seal" aria-hidden="true">贰</span><h3><span class="nw">顶级模型派活，</span><span class="nw">子模型干活</span></h3></div>
+        <p>方案定了，写函数、补测试、改小毛病这类活儿，交给 DeepSeek、Qwen 这样的命令行 AI。顶级模型只管派活和验收。</p>
+        <ul class="ticks">
+          <li>Codex 拆好任务，给每个子模型写一封信。</li>
+          <li>驿站替子模型收信，在它的工作文件夹里把命令跑一次，再把它的说明和改动寄回去。</li>
+          <li>答复一到，Codex 自己醒来验收：通过，或者退回返工，最多两轮。</li>
+          <li>几个子模型各用一个 git worktree，就能同时干。</li>
+        </ul>
+        <p class="note">省额度的道理：顶级模型只在派活和验收时出手，干活的大头交给子模型。</p>
+      </div>
+      <figure class="fig-card rv" style="--d:.1s">
+        <svg class="fig" viewBox="0 370 1080 1130" role="img" aria-label="Codex 把任务派给几个子模型，子模型答复后 Codex 自动验收">
+  <g data-at="0.3">
+    <rect x="320" y="390" width="440" height="76" rx="38" fill="rgba(99,194,122,0.12)" stroke="#63c27a" stroke-width="3"/>
+    <text x="540" y="440" text-anchor="middle" font-size="34" fill="#63c27a">完整方案（来自 ①）</text>
+    <line x1="540" y1="466" x2="540" y2="508" stroke="#63c27a" stroke-width="4" marker-end="url(#h-ok)"/>
+  </g>
+  <g data-at="0.7">
+    <rect x="190" y="512" width="700" height="150" rx="28" fill="#15171c" stroke="#3cc3a3" stroke-width="3"/>
+    <text x="540" y="582" text-anchor="middle" font-size="48" font-weight="600" fill="#3cc3a3">Codex：拆任务、派活</text>
+    <text x="540" y="632" text-anchor="middle" font-size="30" fill="#a29f96">顶级模型</text>
+  </g>
+  <g data-at="1.3">
+    <line x1="410" y1="662" x2="224" y2="834" stroke="#8ea6ff" stroke-width="4" marker-end="url(#h-req)"/>
+    <line x1="540" y1="662" x2="511" y2="834" stroke="#8ea6ff" stroke-width="4" marker-end="url(#h-req)"/>
+    <line x1="670" y1="662" x2="796" y2="834" stroke="#8ea6ff" stroke-width="4" marker-end="url(#h-req)"/>
+    <use href="#env" x="295" y="733" width="44" height="30" style="color:#8ea6ff"/>
+    <use href="#env" x="503" y="733" width="44" height="30" style="color:#8ea6ff"/>
+    <use href="#env" x="711" y="733" width="44" height="30" style="color:#8ea6ff"/>
+    <text class="halo" x="437" y="712" text-anchor="middle" font-size="30" fill="#b8c6ff">任务信</text>
+  </g>
+  <g data-at="1.6">
+    <rect x="90" y="840" width="260" height="180" rx="26" fill="#15171c" stroke="#b39dff" stroke-width="3"/>
+    <text x="220" y="898" text-anchor="middle" font-size="40" font-weight="600" fill="#b39dff">DeepSeek</text>
+    <text x="220" y="950" text-anchor="middle" font-size="38" fill="#edebe5">1 号</text>
+    <text x="220" y="998" text-anchor="middle" font-size="28" fill="#a29f96">工作区 A</text>
+    <rect x="380" y="840" width="260" height="180" rx="26" fill="#15171c" stroke="#b39dff" stroke-width="3"/>
+    <text x="510" y="898" text-anchor="middle" font-size="40" font-weight="600" fill="#b39dff">DeepSeek</text>
+    <text x="510" y="950" text-anchor="middle" font-size="38" fill="#edebe5">2 号</text>
+    <text x="510" y="998" text-anchor="middle" font-size="28" fill="#a29f96">工作区 B</text>
+    <rect x="670" y="840" width="260" height="180" rx="26" fill="#15171c" stroke="#b39dff" stroke-width="3" stroke-dasharray="10 8"/>
+    <text x="800" y="898" text-anchor="middle" font-size="38" font-weight="600" fill="#b39dff">更多子模型</text>
+    <text x="800" y="950" text-anchor="middle" font-size="34" fill="#edebe5">命令行 AI</text>
+    <text x="800" y="998" text-anchor="middle" font-size="28" fill="#a29f96">工作区 C</text>
+  </g>
+  <g data-at="2.8">
+    <line x1="220" y1="1020" x2="326" y2="1138" stroke="#3cc3a3" stroke-width="4" marker-end="url(#h-rep)"/>
+    <line x1="510" y1="1020" x2="529" y2="1138" stroke="#3cc3a3" stroke-width="4" marker-end="url(#h-rep)"/>
+    <line x1="800" y1="1020" x2="724" y2="1138" stroke="#3cc3a3" stroke-width="4" marker-end="url(#h-rep)"/>
+    <use href="#env" x="251" y="1064" width="44" height="30" style="color:#3cc3a3"/>
+    <use href="#env" x="498" y="1064" width="44" height="30" style="color:#3cc3a3"/>
+    <use href="#env" x="740" y="1064" width="44" height="30" style="color:#3cc3a3"/>
+    <text class="halo" x="397" y="1072" text-anchor="middle" font-size="30" fill="#8fe0cb">答复 + 改动</text>
+  </g>
+  <g data-at="3.4">
+    <rect x="190" y="1145" width="700" height="120" rx="28" fill="#15171c" stroke="#3cc3a3" stroke-width="3"/>
+    <text x="540" y="1222" text-anchor="middle" font-size="46" font-weight="600" fill="#3cc3a3">Codex 自动醒来验收</text>
+  </g>
+  <g data-at="4.0">
+    <line x1="370" y1="1265" x2="370" y2="1301" stroke="#e6a640" stroke-width="4" marker-end="url(#h-warn)"/>
+    <line x1="710" y1="1265" x2="710" y2="1301" stroke="#63c27a" stroke-width="4" marker-end="url(#h-ok)"/>
+    <rect x="200" y="1305" width="340" height="100" rx="30" fill="rgba(230,166,64,0.12)" stroke="#e6a640" stroke-width="3"/>
+    <path d="M262 1344 a18 18 0 1 1 -6 22" stroke="#e6a640" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M254 1332 l2 14 l14 -2" stroke="#e6a640" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="400" y="1352" text-anchor="middle" font-size="36" font-weight="600" fill="#e6a640">退回返工</text>
+    <text x="400" y="1390" text-anchor="middle" font-size="26" fill="#a29f96">最多两轮</text>
+    <rect x="560" y="1305" width="300" height="100" rx="30" fill="rgba(99,194,122,0.12)" stroke="#63c27a" stroke-width="3"/>
+    <path d="M650 1354 l14 14 l26 -30" stroke="#63c27a" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="748" y="1369" text-anchor="middle" font-size="40" font-weight="600" fill="#63c27a">通过</text>
+  </g>
+  <g data-at="4.4">
+    <path d="M200 1355 H56 V930 H84" stroke="#e6a640" stroke-width="4" fill="none" stroke-dasharray="12 10" marker-end="url(#h-warn)"/>
+  </g>
+  <g data-at="5.0">
+    <text x="540" y="1462" text-anchor="middle" font-size="34" font-weight="600" fill="#e0a84a">省额度：顶级模型只在派活、验收时出手</text>
+  </g>
+</svg>
+        <figcaption><span>滚到这里，图会自己画一遍 · <a href="assets/fig2.png" target="_blank" rel="noopener">看大图</a></span><button class="replay" type="button">重播 ↻</button></figcaption>
+      </figure>
+    </article>
+
+    <article class="mode">
+      <div class="mode-text rv">
+        <div class="mode-head"><span class="seal" aria-hidden="true">叁</span><h3>跨电脑、跨系统也一样</h3></div>
+        <p>上面两种协作，岗位可以分在不同的电脑上：Mac 上的 Claude 和 Linux 上的 Codex 商量方案，再派活给 Windows 和 Mac 上的子模型。</p>
+        <ul class="ticks">
+          <li>驿站就是一个普通的 git 仓库，每台电脑各克隆一份。</li>
+          <li>每个文件只有一台电脑写，同步永远不冲突。</li>
+          <li>远端用私有 GitHub 仓库或你自己的服务器，不用另搭服务。</li>
+          <li>跨电脑的信经 git 送到；开着自动叫醒的话，最迟一个检查间隔（默认 5 分钟）。</li>
+        </ul>
+        <p class="note">CI 在 macOS、Linux、Windows 上都跑全套测试；Linux 和 Windows 真机上还用得不多。</p>
+      </div>
+      <figure class="fig-card rv" style="--d:.1s">
+        <svg class="fig" viewBox="0 370 1080 1130" role="img" aria-label="Mac、Windows、Linux 三台电脑连着同一个驿站，经 git 同步">
+  <g data-at="0.4">
+    <rect x="240" y="790" width="600" height="200" rx="32" fill="rgba(224,168,74,0.10)" stroke="#e0a84a" stroke-width="3"/>
+    <text x="540" y="860" text-anchor="middle" font-size="52" font-weight="600" fill="#e0a84a">驿站</text>
+    <text x="540" y="912" text-anchor="middle" font-size="30" fill="#edebe5">一个 git 仓库 · 每台电脑一份</text>
+    <text x="540" y="958" text-anchor="middle" font-size="30" fill="#a29f96">不用另搭服务器</text>
+  </g>
+  <g data-at="0.9">
+    <rect x="290" y="400" width="500" height="200" rx="28" fill="#15171c" stroke="#3a3f4a" stroke-width="2.5"/>
+    <text x="540" y="464" text-anchor="middle" font-size="42" font-weight="600" fill="#edebe5">Mac</text>
+    <rect x="335" y="500" width="220" height="64" rx="32" fill="rgba(232,135,95,0.14)" stroke="#e8875f" stroke-width="2.5"/>
+    <text class="mono" x="445" y="543" text-anchor="middle" font-size="30" fill="#e8875f">claude@mac</text>
+    <rect x="575" y="500" width="170" height="64" rx="32" fill="rgba(179,157,255,0.14)" stroke="#b39dff" stroke-width="2.5"/>
+    <text class="mono" x="660" y="543" text-anchor="middle" font-size="30" fill="#b39dff">ds2@mac</text>
+  </g>
+  <g data-at="1.2">
+    <rect x="90" y="1130" width="380" height="200" rx="28" fill="#15171c" stroke="#3a3f4a" stroke-width="2.5"/>
+    <text x="280" y="1194" text-anchor="middle" font-size="42" font-weight="600" fill="#edebe5">Windows</text>
+    <rect x="195" y="1230" width="170" height="64" rx="32" fill="rgba(179,157,255,0.14)" stroke="#b39dff" stroke-width="2.5"/>
+    <text class="mono" x="280" y="1273" text-anchor="middle" font-size="30" fill="#b39dff">ds1@win</text>
+  </g>
+  <g data-at="1.5">
+    <rect x="560" y="1130" width="370" height="200" rx="28" fill="#15171c" stroke="#3a3f4a" stroke-width="2.5"/>
+    <text x="745" y="1194" text-anchor="middle" font-size="42" font-weight="600" fill="#edebe5">Linux</text>
+    <rect x="625" y="1230" width="240" height="64" rx="32" fill="rgba(60,195,163,0.14)" stroke="#3cc3a3" stroke-width="2.5"/>
+    <text class="mono" x="745" y="1273" text-anchor="middle" font-size="30" fill="#3cc3a3">codex@linux</text>
+  </g>
+  <g data-at="1.9">
+    <line x1="540" y1="606" x2="540" y2="784" stroke="#8a909c" stroke-width="4" marker-start="url(#h-link)" marker-end="url(#h-link)"/>
+    <line x1="300" y1="1124" x2="392" y2="996" stroke="#8a909c" stroke-width="4" marker-start="url(#h-link)" marker-end="url(#h-link)"/>
+    <line x1="738" y1="1124" x2="668" y2="996" stroke="#8a909c" stroke-width="4" marker-start="url(#h-link)" marker-end="url(#h-link)"/>
+    <text x="580" y="706" font-size="30" fill="#a29f96">git 同步</text>
+    <use href="#env" x="518" y="680" width="44" height="30" style="color:#e8875f"/>
+    <use href="#env" x="324" y="1045" width="44" height="30" style="color:#b39dff"/>
+    <use href="#env" x="681" y="1045" width="44" height="30" style="color:#3cc3a3"/>
+  </g>
+  <g data-at="2.8">
+    <text x="540" y="1408" text-anchor="middle" font-size="29" fill="#edebe5">① <tspan class="mono" fill="#e8875f">claude@mac</tspan> ⇄ <tspan class="mono" fill="#3cc3a3">codex@linux</tspan>：商量方案</text>
+  </g>
+  <g data-at="3.6">
+    <text x="540" y="1456" text-anchor="middle" font-size="29" fill="#edebe5">② <tspan class="mono" fill="#3cc3a3">codex@linux</tspan> → <tspan class="mono" fill="#b39dff">ds1@win</tspan>、<tspan class="mono" fill="#b39dff">ds2@mac</tspan>：派活、验收</text>
+  </g>
+</svg>
+        <figcaption><span>滚到这里，图会自己画一遍 · <a href="assets/fig3.png" target="_blank" rel="noopener">看大图</a></span><button class="replay" type="button">重播 ↻</button></figcaption>
+      </figure>
+    </article>
+  </div>
+</section>
+
+<!-- ============ see ============ -->
+<section id="see" class="sec">
+  <div class="wrap">
+    <header class="sec-title rv">
+      <p class="eyebrow">看得见</p>
+      <h2><span class="nw">驿站里发生的事，</span><span class="nw">一眼看全</span></h2>
+      <p>下面两张都是驿站的真实输出，用的是示例账本。</p>
+    </header>
+    <div class="see-grid">
+      <figure class="shot rv">
+        <div class="bar"><i></i><i></i><i></i><span>yizhan board</span></div>
+        <img src="assets/board-zh-dark.png" width="1280" height="1060" loading="lazy" alt="驿站看板：三台电脑上的四个 AI 岗位，它们之间的信件、定论和日志">
+        <figcaption><b>一张网页看全局</b><code>yizhan board --open</code> 把整本账画成一张网页，离线也能打开：谁在哪台电脑、手上在做什么、谁给谁写了几封信、处理到哪一步。</figcaption>
+      </figure>
+      <figure class="shot rv" style="--d:.12s">
+        <div class="bar"><i></i><i></i><i></i><span>yizhan demo</span></div>
+        <img src="assets/demo-zh.svg" width="756" height="1096" loading="lazy" alt="驿站十秒演示：Mac 上的 Claude 请 Linux 上的 Codex 复核，Codex 回信并记下定论">
+        <figcaption><b>十秒演示</b><code>yizhan demo</code> 在临时文件夹里模拟两台电脑、两家 AI：Codex 开口之前就看到 Claude 的信，回信、记下定论，Claude 下一次被调用时收到回信。不碰你的配置，也不调用任何 AI。</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ quick start ============ -->
+<section id="start" class="sec">
+  <div class="wrap">
+    <header class="sec-title rv">
+      <p class="eyebrow">三分钟上手</p>
+      <h2><span class="nw">沿着这条路走，</span><span class="nw">一站一两条命令</span></h2>
+      <p>需要 Python 3.9 以上和 git。命令都能直接复制。</p>
+    </header>
+    <ol class="route">
+      <li class="stop rv"><span class="dot">一</span><div class="stop-card">
+        <p class="k">第一站</p><h3>安装</h3>
+        <div class="cmd"><button class="copy" data-copy="pipx install git+https://github.com/Jia7Chi/yizhan">复制</button><pre><span class="p">$ </span>pipx install git+https://github.com/Jia7Chi/yizhan</pre></div>
+        <p class="tip">用 uv 的话：<code>uv tool install git+https://github.com/Jia7Chi/yizhan</code>。驿站只用 Python 标准库和 git，不装别的依赖。</p>
+      </div></li>
+      <li class="stop rv"><span class="dot">二</span><div class="stop-card">
+        <p class="k">第二站</p><h3>看十秒演示</h3>
+        <div class="cmd"><button class="copy" data-copy="yizhan demo">复制</button><pre><span class="p">$ </span>yizhan demo</pre></div>
+        <p class="tip">在临时文件夹里模拟两台电脑、两家 AI 互相写信。不碰你的账本和配置，也不调用任何 AI。</p>
+      </div></li>
+      <li class="stop rv"><span class="dot">三</span><div class="stop-card">
+        <p class="k">第三站</p><h3>接入这台电脑</h3>
+        <div class="cmd"><button class="copy" data-copy="cd ~/code/my-project&#10;yizhan setup">复制</button><pre><span class="p">$ </span>cd ~/code/my-project
+<span class="p">$ </span>yizhan setup</pre></div>
+        <p>向导会问几个问题，每个都有默认值，直接回车就行。它会：</p>
+        <ol>
+          <li>新建一本账，或者把另一台电脑建好的那本克隆过来；</li>
+          <li>登记这台电脑和一个项目；</li>
+          <li>找到本机的 Claude Code 和 Codex，各安排一个岗位；</li>
+          <li>装好 hook，改任何文件之前都先备份；</li>
+          <li>问你要不要给 Codex 打开自动叫醒，你不点头就一直关着。</li>
+        </ol>
+      </div></li>
+      <li class="stop rv"><span class="dot">四</span><div class="stop-card">
+        <p class="k">第四站</p><h3>开会话，写信</h3>
+        <p>在这个文件夹里打开 Claude Code 或 Codex，会话一开始，AI 就拿到开场简报：自己是谁、同事在忙什么、哪些信在等它。要找谁，就写一封信：</p>
+        <div class="cmd"><button class="copy" data-copy="yizhan send --to codex@mac --subject &quot;请复核第三节&quot; --body &quot;推导在 docs/proof.md，重点看第二步&quot;">复制</button><pre><span class="p">$ </span>yizhan send --to codex@mac --subject "请复核第三节" --body "推导在 docs/proof.md，重点看第二步"</pre></div>
+        <div class="cmd"><button class="copy" data-copy="yizhan inbox">复制</button><pre><span class="p">$ </span>yizhan inbox                      <span class="c"># 看有哪些信</span>
+<span class="p">$ </span>yizhan show &lt;编号&gt;                <span class="c"># 读一封信</span>
+<span class="p">$ </span>yizhan ack &lt;编号&gt; --status done --note "已改"   <span class="c"># 登记办得怎样</span></pre></div>
+        <p class="tip">AI 会话里用的也是这些命令，开场简报会教它们怎么用。</p>
+      </div></li>
+      <li class="stop rv"><span class="dot">五</span><div class="stop-card">
+        <p class="k">第五站</p><h3>让 Codex 收到信自己醒来</h3>
+        <div class="cmd"><button class="copy" data-copy="yizhan autowake on --as codex@mac">复制</button><pre><span class="p">$ </span>yizhan autowake on --as codex@mac</pre></div>
+        <p class="tip">默认关着。打开前会先说明代价、等你确认。每个岗位每天最多叫醒 12 次，同一件事往返两轮以后不再叫醒。</p>
+      </div></li>
+      <li class="stop rv"><span class="dot">六</span><div class="stop-card">
+        <p class="k">第六站</p><h3>接入命令行 AI 当子模型</h3>
+        <p>没有 hook 的 AI 也能占一个岗位，驿站替它收发信。登记时给一个命令模板，<code>{prompt}</code> 会换成提示词：</p>
+        <div class="cmd"><button class="copy" data-copy="yizhan seat add qwen --agent cli --title &quot;通义千问&quot; --path ~/code/shop \&#10;  --command &quot;qwen -p {prompt} --approval-mode auto-edit&quot;&#10;yizhan autowake on --as qwen@mac">复制</button><pre><span class="p">$ </span>yizhan seat add qwen --agent cli --title "通义千问" --path ~/code/shop \
+    --command "qwen -p {prompt} --approval-mode auto-edit"
+<span class="p">$ </span>yizhan autowake on --as qwen@mac</pre></div>
+        <p class="tip">DeepSeek、Kimi Code、CodeBuddy Code 也是同一种接法；也可以用 <code>{prompt_file}</code>，或者不写占位符，让提示词走标准输入。参数名各版本不一样，先用 <code>&lt;命令&gt; --help</code> 核对。它能改哪些文件、能不能运行命令，由模板里的参数决定，用的是它自己的账号和额度。</p>
+      </div></li>
+      <li class="stop rv"><span class="dot">七</span><div class="stop-card">
+        <p class="k">第七站</p><h3>接上另一台电脑</h3>
+        <div class="cmd"><button class="copy" data-copy="yizhan setup">复制</button><pre><span class="p">$ </span>yizhan setup                      <span class="c"># 在另一台电脑上，选“接入”</span></pre></div>
+        <p class="tip">在另一台电脑上装好驿站，再跑一次向导，选“接入”，填上账本地址。账本可以放在私有 GitHub 仓库（装了 <code>gh</code> 的话，向导能顺手建好），也可以放在你能用 SSH 连上的服务器上。</p>
+      </div></li>
+      <li class="stop rv"><span class="dot">八</span><div class="stop-card">
+        <p class="k">第八站</p><h3>看全局，做体检</h3>
+        <div class="cmd"><button class="copy" data-copy="yizhan board --open&#10;yizhan doctor">复制</button><pre><span class="p">$ </span>yizhan board --open               <span class="c"># 整本账画成一张网页</span>
+<span class="p">$ </span>yizhan doctor                     <span class="c"># 哪里不对劲，先跑这个</span></pre></div>
+      </div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ terms ============ -->
+<section id="terms" class="sec">
+  <div class="wrap">
+    <header class="sec-title rv">
+      <p class="eyebrow">几个说法</p>
+      <h2><span class="nw">九个词，</span><span class="nw">就是驿站的全部</span></h2>
+    </header>
+    <div class="stamps">
+      <div class="stamp rv" style="--c:var(--claude)"><div class="face"><h3>岗位</h3><span class="en">seat</span></div><p>每个 AI 会话占一个岗位，写成“名字@机器”，比如 <code>claude@mac</code>、<code>codex@linux</code>。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--gold);--d:.05s"><div class="face"><h3>驿站</h3><span class="en">ledger</span></div><p>所有岗位共用的一本账：一个普通的 git 仓库，每台电脑各克隆一份。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--req);--d:.1s"><div class="face"><h3>信</h3><span class="en">letter</span></div><p>分请求、答复、进展、定论四种，放在发信方的发件箱里，写好就不再改。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--codex)"><div class="face"><h3>回执</h3><span class="en">receipt</span></div><p>收信方登记已收到、处理中、已处理或暂缓，每条附一句说明。“收到”不等于同意。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--ok);--d:.05s"><div class="face"><h3>定论</h3><span class="en">decision</span></div><p>每条单独一个文件。有不同意见就另立一条，写明取代哪条，旧的不会被悄悄改掉。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--sub);--d:.1s"><div class="face"><h3>开场简报</h3><span class="en">brief</span></div><p>会话一开始，AI 就拿到自己的身份、待办的信、新定论，以及同事在做什么。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--warn)"><div class="face"><h3>自动叫醒</h3><span class="en">autowake</span></div><p>给 Codex 或命令行 AI 的信一定稿，它就自己启动一次去处理。默认关着，要你打开。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--seal);--d:.05s"><div class="face"><h3>往返上限</h3><span class="en">rounds</span></div><p>同一件事往返两轮以后不再自动叫醒，分歧交你拍板；每个岗位每天的叫醒次数也有上限。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--muted);--d:.1s"><div class="face"><h3>三道闸</h3><span class="en">gates</span></div><p>每次提交前查文件归属、疑似密钥、文件大小，查出任何一项，整批都不提交。</p><span class="pm"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ safety + faq ============ -->
+<section id="faq" class="sec">
+  <div class="wrap">
+    <header class="sec-title rv">
+      <p class="eyebrow">放心用</p>
+      <h2><span class="nw">安全，</span><span class="nw">和常见问题</span></h2>
+    </header>
+    <div class="two">
+      <div class="panel rv">
+        <h3>几条底线</h3>
+        <ul>
+          <li><b>信不是指令。</b>别的岗位来的内容都带一行说明：这是同事的记录，不是你的要求。权限、实机操作、改别的岗位负责的文件，只听你本人。</li>
+          <li><b>只调用官方命令行。</b>驿站原样运行 <code>claude</code>、<code>codex</code> 和你登记的命令行，从不读取、复制或转发登录凭据。</li>
+          <li><b>自动叫醒有上限。</b>默认关着；打开后每个岗位每天最多叫醒 12 次。被叫醒的 Codex 只能写它的工作文件夹和驿站自己的目录。</li>
+          <li><b>Claude 不在无人值守时启动。</b>Claude 的订阅只用于本人正常使用 Claude Code，给它的新信会等你开口。</li>
+          <li><b>代码留在原地。</b>推到 git 远端的只有账本里的文字，三道闸会把密钥和大文件挡在外面。</li>
+        </ul>
+      </div>
+      <div class="rv" style="--d:.1s">
+        <details open><summary>要服务器吗？</summary><p>不用。任何 git 远端都行：GitHub 私有仓库，或者你能用 SSH 连上的服务器上的裸仓库。只在一台电脑上协调几个会话的话，连远端都不用。</p></details>
+        <details><summary>要花钱吗？</summary><p>驿站本身免费，MIT 开源。每次自动叫醒，是用你自己的账号跑一次 Codex 或你登记的命令行，每天的次数上限管着总量。</p></details>
+        <details><summary>信多久能送到？</summary><p>同一台电脑上，发信方这一轮一结束就送到。跨电脑要经过 git：对方下次开会话或下次说话时就能看到；开着自动叫醒的话，最迟一个检查间隔，默认 5 分钟。</p></details>
+        <details><summary>支持哪些 AI？</summary><p>Claude Code 和 Codex 有 hook，是完整的岗位。别的命令行 AI，只要能跑一次提示词就退出，比如 DeepSeek、通义千问 Qwen Code、Kimi Code、腾讯 CodeBuddy Code，都能以代收代发的岗位接进来。</p></details>
+        <details><summary>Windows 能用吗？</summary><p>能。CI 在 Windows 上跑全套测试；hook 经 Git Bash 执行，Claude Code 在 Windows 上本来就这样跑 hook。PowerShell 暂不支持。</p></details>
+        <details><summary>和多智能体框架有什么不同？</summary><p>那些框架在一个程序里编排多个智能体，通常走 API。驿站连接的是你已经在用的 AI 应用，它们各用各的登录、沙箱和权限确认，分布在你自己的几台电脑上。</p></details>
+      </div>
+    </div>
+    <p class="status rv"><b>现状</b>　早期版本 0.1。正在 macOS 上使用，CI 覆盖 macOS、Linux、Windows；Linux 和 Windows 真机上还用得不多。接下来：发布到 PyPI、接入更多 AI、支持 PowerShell hook、看板自动刷新。</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="logo-link" href="#"><svg aria-hidden="true"><use href="#logo"/></svg><b>驿站</b><span>yizhan</span></a>
+    <span>MIT 许可 · 开源免费</span>
+    <nav>
+      <a href="https://github.com/Jia7Chi/yizhan">GitHub 仓库</a>
+      <a href="https://github.com/Jia7Chi/yizhan/blob/main/README.zh-CN.md">中文说明</a>
+      <a href="https://github.com/Jia7Chi/yizhan/blob/main/README.md">English</a>
+      <a href="https://github.com/Jia7Chi/yizhan/blob/main/docs/design.zh-CN.md">设计说明</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Sections fade in as they come into view.
+  const io = new IntersectionObserver(entries => {
+    for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.rv').forEach(el => io.observe(el));
+
+  // The logic diagrams draw themselves step by step, once they are on screen.
+  const figs = [...document.querySelectorAll('svg.fig')];
+  function frameAt(svg, t) {
+    for (const el of svg.querySelectorAll('[data-at]')) {
+      const p = Math.max(0, Math.min(1, (t - Number(el.dataset.at)) / 0.45));
+      el.style.opacity = p;
+      el.style.transform = `translateY(${(1 - p) * 18}px)`;
+    }
+  }
+  function play(svg) {
+    if (still) { frameAt(svg, 1e9); return; }
+    const ends = [...svg.querySelectorAll('[data-at]')].map(el => Number(el.dataset.at));
+    const end = Math.max(...ends) + 0.6, t0 = performance.now();
+    cancelAnimationFrame(svg._raf);
+    const tick = now => {
+      const t = (now - t0) / 1000;
+      frameAt(svg, t);
+      if (t < end) svg._raf = requestAnimationFrame(tick);
+    };
+    svg._raf = requestAnimationFrame(tick);
+  }
+  if (!still) figs.forEach(svg => frameAt(svg, 0));
+  const fo = new IntersectionObserver(entries => {
+    for (const e of entries) if (e.isIntersecting) { play(e.target); fo.unobserve(e.target); }
+  }, { threshold: 0.35 });
+  figs.forEach(svg => fo.observe(svg));
+  document.querySelectorAll('.replay').forEach(b => b.addEventListener('click', () => play(b.closest('figure').querySelector('svg.fig'))));
+
+  // The hero letters keep travelling unless the reader asked for less motion.
+  const hero = document.getElementById('hero-svg');
+  if (still && hero && hero.pauseAnimations) { hero.pauseAnimations(); hero.setCurrentTime(2.2); }
+
+  // Copy buttons.
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch (_) {}
+      ta.remove(); return ok;
+    }
+  }
+  document.querySelectorAll('.copy').forEach(b => b.addEventListener('click', async () => {
+    const ok = await copyText(b.dataset.copy);
+    b.textContent = ok ? '已复制' : '请手动复制';
+    b.classList.toggle('done', ok);
+    setTimeout(() => { b.textContent = '复制'; b.classList.remove('done'); }, 1600);
+  }));
+})();
+</script>
+</body>
+</html>
