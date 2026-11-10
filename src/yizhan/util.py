@@ -280,33 +280,46 @@ def try_file_lock(path):
 
 # ---------- a command and everything it starts ----------
 
-def run_tree(argv, cwd, stdout, stderr, timeout, input_text=None):
-    """Run argv at the head of a process group of its own and wait for it. When it exits,
-    or is still running after `timeout` seconds, whatever it started that is still in that
-    group is ended as well: an agent's tools must not go on changing files after the run
-    is over, nor overlap the next run of the same letter. Returns the exit code, or None
-    when the time ran out; raises OSError when the command cannot start.
+RUN_TAG = "YIZHAN_RUN_ID"
 
-    On Windows the tree is ended with taskkill on a timeout only; processes left behind
-    by a command that exits normally are not tracked there."""
+
+def env_outside_run():
+    """This process's environment without a run's tag, for a process that is a job of its
+    own (a detached waker) and must not be ended along with the run that started it."""
+    return {k: v for k, v in os.environ.items() if k != RUN_TAG}
+
+
+def run_tree(argv, cwd, stdout, stderr, timeout, input_text=None):
+    """Run argv and wait for it. When it exits, or is still running after `timeout`
+    seconds, everything it started is ended as well: an agent's tools must not go on
+    changing files after the run is over, nor overlap the next run of the same letter.
+    Returns the exit code, or None when the time ran out; raises OSError when the
+    command cannot start.
+
+    Two marks find what it started. It heads a process group of its own; and its
+    environment carries a tag (RUN_TAG) that every descendant inherits, so a tool that
+    leaves the group (setsid, a daemon) is still found by the tag. Only a process that
+    both leaves the group and clears its environment escapes. On Windows the tree is
+    ended with taskkill on a timeout only."""
+    tag = f"{os.getpid()}-{time.time_ns()}"
     group = {"creationflags": 0x00000200} if os.name == "nt" else {"start_new_session": True}  # CREATE_NEW_PROCESS_GROUP
     text = {"text": True, "encoding": "utf-8", "errors": "replace"} if input_text is not None else {}
     proc = subprocess.Popen(argv, cwd=cwd, stdout=stdout, stderr=stderr,
                             stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
-                            **group, **text)
+                            env=dict(os.environ, **{RUN_TAG: tag}), **group, **text)
     try:
         proc.communicate(input=input_text, timeout=timeout)
         return proc.returncode
     except subprocess.TimeoutExpired:
         return None
     finally:
-        _end_tree(proc)
+        _end_tree(proc, tag)
         if proc.stdin:
             with contextlib.suppress(OSError):
                 proc.stdin.close()
 
 
-def _end_tree(proc):
+def _end_tree(proc, tag):
     if os.name == "nt":
         if proc.poll() is None:
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
@@ -315,7 +328,46 @@ def _end_tree(proc):
             os.killpg(proc.pid, signal.SIGKILL)     # the group keeps the leader's id
         except (ProcessLookupError, PermissionError):
             pass                                     # nothing left in it
+        _end_tagged(f"{RUN_TAG}={tag}")
     proc.wait()
+
+
+def _end_tagged(needle):
+    """Kill every process whose environment holds `needle`, until a look finds none. It
+    stops early only when killing makes no progress (what is left is already dying)."""
+    previous = None
+    while True:
+        pids = _tagged(needle)
+        if not pids or pids == previous:
+            return
+        for pid in pids:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
+        previous = pids
+
+
+def _tagged(needle):
+    """Process ids whose environment holds `needle`: /proc on Linux, ps -E elsewhere."""
+    found, me = set(), os.getpid()
+    proc_dir = Path("/proc")
+    if (proc_dir / "self" / "environ").exists():
+        want = b"\0" + needle.encode() + b"\0"
+        for entry in proc_dir.iterdir():
+            if entry.name.isdigit() and int(entry.name) != me:
+                with contextlib.suppress(OSError):
+                    if want in b"\0" + (entry / "environ").read_bytes():
+                        found.add(int(entry.name))
+        return found
+    try:
+        out = subprocess.run(["ps", "-E", "-ww", "-ax", "-o", "pid=,command="], capture_output=True,
+                             text=True, errors="replace", timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return found
+    for line in out.splitlines():
+        head = line.split(None, 1)          # ps -E puts the environment after the arguments
+        if len(head) == 2 and head[0].isdigit() and int(head[0]) != me and f" {needle} " in f" {head[1]} ":
+            found.add(int(head[0]))
+    return found
 
 
 # ---------- places ----------

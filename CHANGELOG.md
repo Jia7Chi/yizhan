@@ -7,8 +7,8 @@
 - A woken Codex run ends its turn when its process exits: yizhan seals its letters, wakes their readers and pushes, even if Codex's own hooks are missing or not yet approved.
 - `--workdir` is stored as a full path, so a background job started in another folder still finds it.
 - A relay run is recorded before its reply goes out: if the reply or the receipt cannot be written, the next try delivers that same result instead of running the task again, and an attachment that went out is never rewritten.
-- A woken command runs in a process group of its own; when it exits or runs out of time, whatever it started is ended too (on Windows, on a timeout).
-- Each relayed reply wakes its reader at once. A wake that arrives while the seat is busy is picked up as soon as the running one ends.
+- A woken command runs in a process group of its own, with a tag in its environment; when it exits or runs out of time, the group and every tagged descendant are ended, including tools that started a session of their own (on Windows, on a timeout).
+- Each relayed reply wakes its reader at once, by the reply's id, so a reply delivered on a retry wakes its reader too. A wake that finds the seat busy leaves a note and tries the lock once more, so it is picked up whichever way the two wakers cross.
 - A letter whose prompt does not fit the command line waits until the template changes, without using the day's budget or holding up other letters.
 - Windows command templates follow Windows quoting, so backslashes in paths stay as they are.
 - Diff attachments keep their bytes, so CRLF and non-UTF-8 files apply cleanly; edits to assume-unchanged files show up.

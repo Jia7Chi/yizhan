@@ -25,23 +25,28 @@ from .i18n import pick
 
 def wake_once(ledger, seat, dry_run=False, pull=True, now=None, runner=None):
     """Check once and start a headless run if letters are ready. Only one waker per seat
-    runs at a time. One started meanwhile leaves a note and returns "busy"; the running
-    waker looks for that note once it has let go of the lock and, if it is there, checks
-    again. So a letter that arrives during a run (a fast reply, say) is handled when the
-    run ends instead of waiting for the next trigger, and nothing polls."""
+    runs at a time. One that finds the lock taken leaves a note and then tries the lock
+    once more; the running waker looks for the note once it has let go and, if it is
+    there, checks again. Whichever way the two cross, one of them sees the new letter:
+    the note is down before the second try, so either that try gets the lock, or the
+    holder still has it and will find the note. Nothing polls."""
     lock, again = ledger.state_dir / f"wake-{seat}.lock", ledger.state_dir / f"wake-{seat}.again"
-    first = None
+    first, noted = None, False
     while True:
         with util.try_file_lock(lock) as got:
-            if not got:
+            if got:
                 if not dry_run:
-                    _flag(again)
-                return first or {"seat": seat, "action": "busy", "notes": []}
-            _take(again)                            # a note left before this check is covered by it
-            r = _wake_once(ledger, seat, dry_run, pull and first is None, now if first is None else None, runner)
-        first = first or r
-        if dry_run or not _take(again):
-            return first
+                    _take(again)                    # a note left before this check is covered by it
+                r = _wake_once(ledger, seat, dry_run, pull and first is None, now if first is None else None, runner)
+        if got:
+            first = first or r
+            if dry_run or not _take(again):
+                return first
+            continue                                # turned someone away meanwhile: look again
+        if dry_run or noted:
+            return first or {"seat": seat, "action": "busy", "notes": []}
+        _flag(again)
+        noted = True
 
 
 def _flag(path):
@@ -154,9 +159,9 @@ def _end_turn(ledger, seat, started, result):
 # The run's outcome is already recorded when these run. Like the Stop hook, a failure
 # here is only noted: the letters are final, and a later check still finds them.
 
-def _wake_readers(ledger, seat, since, result):
+def _wake_readers(ledger, seat, since, result, ids=None):
     try:
-        new = kick(ledger, seat, since=since)
+        new = kick(ledger, seat, since=since, ids=ids)
     except Exception as e:  # noqa: BLE001
         result["notes"].append(pick(f"没能叫醒收信方：{e}", f"Could not wake the readers: {e}"))
         return
@@ -223,7 +228,8 @@ def _relay(ledger, prof, ready, result, today, used, budget, open_ids, dry_run, 
             continue
         if r["returncode"] != 0:
             break                                   # the command fails now; the next check tries again
-        _wake_readers(ledger, seat, started, result)   # this reply's reader starts now
+        _wake_readers(ledger, seat, started, result, ids=[r["reply"]])   # this reply's reader starts now,
+        # by its id: a reply already sent in an earlier round (only its receipt failed) is older than `started`
     if not done:
         result.update(action="over_budget", used=used, budget=budget)
         return result
@@ -269,9 +275,10 @@ def _run(argv, workdir, log_path, timeout):
 
 # ---------- waking at the moment the sender's turn ends ----------
 
-def fresh_targets(ledger, sender, since=None):
+def fresh_targets(ledger, sender, since=None, ids=None):
     """Local seats with autowake on that hold a wake-worthy letter from `sender`
-    written after `since` (the sender's previous turn end) and not yet closed."""
+    written after `since` (the sender's previous turn end), or among `ids` whenever it
+    was written, and not yet closed."""
     targets = set()
     outbox = ledger.seat_dir(sender) / "outbox"
     for path in sorted(outbox.glob("*.md")) if outbox.is_dir() else []:
@@ -280,7 +287,12 @@ def fresh_targets(ledger, sender, since=None):
         except (OSError, ValueError):
             continue
         created = util.parse_iso(meta.get("created"))
-        if not meta.get("wake") or (since and created and created < since):
+        if ids is not None:
+            if meta.get("id") not in ids:
+                continue
+        elif since and created and created < since:
+            continue
+        if not meta.get("wake"):
             continue
         for to in meta.get("to", []):
             if to in targets or to.split("@", 1)[-1] != ledger.machine:
@@ -294,11 +306,11 @@ def fresh_targets(ledger, sender, since=None):
     return sorted(targets)
 
 
-def kick(ledger, sender, since=None, spawn=None):
+def kick(ledger, sender, since=None, spawn=None, ids=None):
     """Start a waker now for each seat in fresh_targets. Called from the sender's Stop hook,
     so it must return at once: the wakers run on in the background."""
     started = []
-    for seat in fresh_targets(ledger, sender, since):
+    for seat in fresh_targets(ledger, sender, since, ids):
         (spawn or spawn_detached)(brief.cli_argv() + ["wake", "--as", seat],
                                   ledger.state_dir / "wake" / f"{seat}.log")
         started.append(seat)
@@ -308,7 +320,10 @@ def kick(ledger, sender, since=None, spawn=None):
 def spawn_detached(argv, log_path):
     """Start a process that keeps running after the hook that started it exits."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    kwargs = {"stdin": subprocess.DEVNULL, "stderr": subprocess.STDOUT, "close_fds": True}
+    kwargs = {"stdin": subprocess.DEVNULL, "stderr": subprocess.STDOUT, "close_fds": True,
+              # Without the run's tag: a waker started from a woken agent's Stop hook would
+              # otherwise be ended with that agent's run (util.run_tree).
+              "env": util.env_outside_run()}
     if os.name == "nt":
         kwargs["creationflags"] = 0x00000008 | 0x00000200    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     else:
