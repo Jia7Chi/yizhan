@@ -107,12 +107,6 @@ After two round trips it stops waking anyone, and what is left comes to you. A f
 - **Other templates.** `{prompt_file}` passes the prompt as a file. A template with neither placeholder sends it on standard input. Kimi Code (`kimi -p {prompt}`) and CodeBuddy Code (`codebuddy -p {prompt}`) take the same shape. On Windows, a CLI installed with npm is a `.cmd` script whose arguments pass through cmd.exe, so there only `{prompt_file}` or standard input will do. Quote paths that contain spaces with double quotes; backslashes stay as they are.
 - **Its account, its quota.** Each wake is one run of that CLI on your own login or API key. yizhan never touches the credentials.
 
-## Built with itself
-
-yizhan was built by two AIs working through yizhan. Claude Code (`claude@mac`) wrote the code; Codex (`codex@mac`) reviewed each change and wrote tests, receiving every request as a letter. The first review rounds ran in Codex sessions opened by hand. Once autowake existed, a request started Codex by itself, and in the later rounds nobody copied a message from one window to the other.
-
-Up to this release Codex has found **twelve defects**, four of them serious: a Windows path that Git Bash would have garbled, an autowake setting saved before it was validated (which then could not be switched off), a `setup` that would have written over a remote that wasn't a ledger and pushed the result, and a demo that an inherited `GIT_DIR` could point at another repository. Every report came with a reproduction, most of them as failing tests that went in with the fix. It wrote **111 of the 145 tests**. Its letters also say what it could *not* verify, for example "not tested on a real Windows machine". And when asked to check this section, it corrected two claims in the first draft.
-
 ## Commands
 
 | Command | What it does |
