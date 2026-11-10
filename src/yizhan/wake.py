@@ -30,20 +30,22 @@ def wake_once(ledger, seat, dry_run=False, pull=True, now=None, runner=None):
     there, checks again. Whichever way the two cross, one of them sees the new letter:
     the note is down before the second try, so either that try gets the lock, or the
     holder still has it and will find the note. Nothing polls."""
+    if dry_run:
+        # A look that changes nothing takes no lock, so it never turns a real wake away.
+        return _wake_once(ledger, seat, True, pull, now, runner)
     lock, again = ledger.state_dir / f"wake-{seat}.lock", ledger.state_dir / f"wake-{seat}.again"
     first, noted = None, False
     while True:
         with util.try_file_lock(lock) as got:
             if got:
-                if not dry_run:
-                    _take(again)                    # a note left before this check is covered by it
-                r = _wake_once(ledger, seat, dry_run, pull and first is None, now if first is None else None, runner)
+                _take(again)                        # a note left before this check is covered by it
+                r = _wake_once(ledger, seat, False, pull and first is None, now if first is None else None, runner)
         if got:
             first = first or r
-            if dry_run or not _take(again):
+            if not _take(again):
                 return first
             continue                                # turned someone away meanwhile: look again
-        if dry_run or noted:
+        if noted:
             return first or {"seat": seat, "action": "busy", "notes": []}
         _flag(again)
         noted = True
