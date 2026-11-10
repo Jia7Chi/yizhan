@@ -39,7 +39,21 @@ class Adapter:
 ADAPTERS = {
     "claude": Adapter("claude", "Claude Code", 10_000, "queue"),
     "codex": Adapter("codex", "Codex", 2_500, "exec"),
+    # Any agent CLI that can take one prompt and exit, such as Qwen Code or Kimi Code. It has
+    # no hooks, so nothing is injected into it; yizhan relays its letters instead (relay.py).
+    "cli": Adapter("cli", "Agent CLI", 0, "exec"),
 }
+
+
+def display_name(prof):
+    """How a seat's agent is named on screen: a cli seat by the program it runs."""
+    if prof.get("agent") == "cli" and prof.get("command"):
+        try:
+            return os.path.basename(shlex.split(prof["command"])[0]) or "Agent CLI"
+        except ValueError:
+            return "Agent CLI"
+    agent = ADAPTERS.get(prof.get("agent"))
+    return agent.display if agent else str(prof.get("agent", ""))
 
 # (event, timeout in seconds). SessionStart pulls and Stop may push, so they get longer.
 HOOK_EVENTS = (("SessionStart", 30), ("UserPromptSubmit", 10), ("PostToolUse", 10), ("Stop", 30))

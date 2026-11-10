@@ -25,7 +25,9 @@ from .util import YizhanError
 
 SHARED = "*shared*"
 DECISION_RE = re.compile(r"^(\d{8})_([a-z0-9][a-z0-9-]{0,39})@([a-z0-9][a-z0-9-]{0,39})_(.+)\.md$")
-AGENT_KINDS = ("claude", "codex")
+AGENT_KINDS = ("claude", "codex", "cli")
+# Agents whose sessions run yizhan hooks. A "cli" seat has none: yizhan relays its mail (relay.py).
+HOOKED_KINDS = ("claude", "codex")
 # What an otherwise empty folder may hold and still become a new ledger.
 IGNORABLE = (".git", ".DS_Store", "Thumbs.db", "desktop.ini")
 WAKE_MODES = ("queue", "exec")
@@ -259,6 +261,14 @@ class Ledger:
         if wake is not None and wake not in WAKE_MODES:
             raise YizhanError(pick(f"叫醒方式只能是 {'、'.join(WAKE_MODES)}",
                                    f"The wake mode must be one of {', '.join(WAKE_MODES)}"))
+        if agent == "cli" and command is not None:
+            # Registration runs in the user's own shell, whose PATH finds the program; a run
+            # started later by a background job may not, so keep it as a full path.
+            from .relay import absolute                # imported here: relay needs nothing from ledger
+            command = absolute(command)
+        if workdir:
+            # Stored as a full path: a background job starts in another folder.
+            workdir = os.path.abspath(os.path.expanduser(workdir))
         for p in projects:
             if self.project(p) is None:
                 raise YizhanError(pick(f"没有 {p} 这个项目，先用 yizhan project add 建",
@@ -271,6 +281,12 @@ class Ledger:
                 raise YizhanError(pick(f"{address} 原来登记的是 {old.get('agent')}，不能改成 {agent}；换个岗位名",
                                        f"{address} was registered as {old.get('agent')} and cannot change to "
                                        f"{agent}; use another seat name"))
+            if agent == "cli" and not (command or old.get("command")):
+                raise YizhanError(pick("命令行 AI 岗位要给出命令模板，例如：--command 'qwen -p {prompt}'"
+                                       "（{prompt} 换成提示词；不写它，提示词就从标准输入送进去）",
+                                       "A cli seat needs a command template, for example: --command 'qwen -p "
+                                       "{prompt}' ({prompt} becomes the prompt; without it the prompt goes to "
+                                       "standard input)"))
             prof = dict(old)            # keep fields set elsewhere, such as autowake
             prof.update({
                 "address": address, "name": name, "machine": self.machine, "agent": agent,

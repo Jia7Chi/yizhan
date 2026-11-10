@@ -39,13 +39,16 @@ def _env(root, network):
     return env
 
 
-def git(root, *args, timeout=60, check=True, network=False, input_text=None):
+def git(root, *args, timeout=60, check=True, network=False, input_text=None, env_extra=None):
+    """Run git in `root`. `env_extra` sets variables on purpose, such as a scratch
+    GIT_INDEX_FILE; inherited ones that would point git elsewhere are always dropped."""
     # --literal-pathspecs: a file named "a*.md" means that file, not a glob.
     cmd = ["git", "-c", "core.quotepath=off", "-C", str(root), "--literal-pathspecs", *args]
+    env = _env(root, network) if network else base_env()
+    env.update(env_extra or {})
     try:
         r = subprocess.run(cmd, input=input_text, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout,
-                           env=_env(root, network) if network else base_env())
+                           encoding="utf-8", errors="replace", timeout=timeout, env=env)
     except FileNotFoundError:
         raise GitError(pick("没找到 git 命令，请先安装 git",
                             "The git command was not found; install git first")) from None
@@ -56,6 +59,16 @@ def git(root, *args, timeout=60, check=True, network=False, input_text=None):
         msg = " ".join((r.stderr or r.stdout or "").split())[:400]
         raise GitError(pick(f"git {' '.join(args[:2])} 失败：{msg}", f"git {' '.join(args[:2])} failed: {msg}"))
     return r
+
+
+def toplevel(path):
+    """The root of the git repository that holds `path`, or None."""
+    try:
+        r = git(path, "rev-parse", "--show-toplevel", check=False, timeout=10)
+    except GitError:
+        return None
+    out = r.stdout.strip()
+    return os.path.normpath(out) if r.returncode == 0 and out else None
 
 
 def is_repo(root):

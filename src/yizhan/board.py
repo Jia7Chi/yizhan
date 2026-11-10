@@ -126,7 +126,7 @@ def _projects_attr(names):
 
 def seat_card(led, s, open_count):
     agent = s.get("agent", "")
-    display = adapters.ADAPTERS[agent].display if agent in adapters.ADAPTERS else agent
+    display = adapters.display_name(s)
     pres = s.get("presence") or {}
     rows = []
     if s.get("duty"):
@@ -330,7 +330,7 @@ PAGE = string.Template("""<!doctype html>
 <style>
 :root {
   --bg: #f5f4ef; --panel: #ffffff; --ink: #1f1e1b; --muted: #6d6b64; --faint: #9a978e; --line: #e3e0d8;
-  --accent: #3657c9; --claude: #c8643f; --codex: #13866f; --link: #8d8a80;
+  --accent: #3657c9; --claude: #c8643f; --codex: #13866f; --cli: #7a5bc7; --link: #8d8a80;
   --req: #3657c9; --rep: #13866f; --upd: #7b786f; --dec: #a8701a;
   --ok: #2b8a3e; --work: #c27c0e; --soft: #f0eee7; --chip: #ebe8df;
   --shadow: 0 1px 2px rgba(31,30,27,.05), 0 6px 20px rgba(31,30,27,.05);
@@ -338,7 +338,7 @@ PAGE = string.Template("""<!doctype html>
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #151513; --panel: #1f1e1c; --ink: #ecebe5; --muted: #a8a59c; --faint: #7d7a72; --line: #34322e;
-    --accent: #8ea6ff; --claude: #e8875f; --codex: #3cc3a3; --link: #77746b;
+    --accent: #8ea6ff; --claude: #e8875f; --codex: #3cc3a3; --cli: #b39cff; --link: #77746b;
     --req: #8ea6ff; --rep: #3cc3a3; --upd: #a8a59c; --dec: #e0a84a;
     --ok: #63c27a; --work: #e6a640; --soft: #262522; --chip: #2c2b27;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
@@ -346,7 +346,7 @@ PAGE = string.Template("""<!doctype html>
 }
 :root[data-theme="dark"] {
   --bg: #151513; --panel: #1f1e1c; --ink: #ecebe5; --muted: #a8a59c; --faint: #7d7a72; --line: #34322e;
-  --accent: #8ea6ff; --claude: #e8875f; --codex: #3cc3a3; --link: #77746b;
+  --accent: #8ea6ff; --claude: #e8875f; --codex: #3cc3a3; --cli: #b39cff; --link: #77746b;
   --req: #8ea6ff; --rep: #3cc3a3; --upd: #a8a59c; --dec: #e0a84a;
   --ok: #63c27a; --work: #e6a640; --soft: #262522; --chip: #2c2b27;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
@@ -385,6 +385,7 @@ h2 { font-size: 15px; margin: 30px 0 4px; letter-spacing: .02em; }
   border-left: 4px solid var(--link); }
 .seat.claude { border-left-color: var(--claude); }
 .seat.codex { border-left-color: var(--codex); }
+.seat.cli { border-left-color: var(--cli); }
 .seat header { display: flex; gap: 10px; align-items: flex-start; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); margin-top: 6px; flex: none; }
 .dot.live { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
@@ -393,6 +394,7 @@ h2 { font-size: 15px; margin: 30px 0 4px; letter-spacing: .02em; }
 .sub { color: var(--muted); font-size: 12.5px; }
 .seat.claude .agent { color: var(--claude); font-weight: 600; }
 .seat.codex .agent { color: var(--codex); font-weight: 600; }
+.seat.cli .agent { color: var(--cli); font-weight: 600; }
 .duty { margin: 8px 0 0; color: var(--ink); }
 .focus { margin: 6px 0 0; background: var(--soft); border-radius: 8px; padding: 6px 9px; }
 .label { display: block; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
@@ -438,7 +440,7 @@ summary { cursor: pointer; color: var(--faint); font-size: 12px; }
 .jrow { display: grid; grid-template-columns: 44px auto 1fr; gap: 8px; padding: 3px 0; font-size: 13px; align-items: baseline; }
 .jtime { color: var(--faint); font-variant-numeric: tabular-nums; }
 .jseat { font-size: 12px; font-weight: 600; color: var(--muted); }
-.jseat.claude { color: var(--claude); } .jseat.codex { color: var(--codex); }
+.jseat.claude { color: var(--claude); } .jseat.codex { color: var(--codex); } .jseat.cli { color: var(--cli); }
 .empty { color: var(--faint); font-size: 13px; }
 .foot { margin-top: 40px; color: var(--faint); font-size: 12px; }
 [hidden] { display: none !important; }

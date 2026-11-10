@@ -3,8 +3,9 @@
 Starting an agent on its own is opt-in per seat (`yizhan autowake on`); otherwise
 letters wait for a session someone opens. Two things start a waker:
 
-- On one machine, the sender's own Stop hook (`kick`). The sender's turn has just
-  ended, so its letters are final and the reader can start at once. No polling.
+- On one machine, the moment the sender's turn ends (`kick`): its own Stop hook or,
+  for a run yizhan woke, the waker as soon as that run exits. The sender's letters
+  are final, so the reader can start at once. No polling.
 - Letters that arrive from another machine through git, or whose sender never ends
   its turn, are picked up by a background job that runs `yizhan wake` every so often
   (service.py). Its interval is how soon such a letter should be noticed.
@@ -18,7 +19,7 @@ import os
 import subprocess
 import time
 
-from . import adapters, brief, gitio, mail, state, sync, util
+from . import adapters, brief, gitio, mail, relay, state, sync, util
 from .i18n import pick
 
 
@@ -66,6 +67,8 @@ def _wake_once(ledger, seat, dry_run, pull, now, runner):
     if used >= budget:
         result.update(action="over_budget", used=used, budget=budget)
         return result
+    if prof["agent"] == "cli":
+        return _relay(ledger, prof, ready, result, today, used, budget, open_ids, dry_run, runner)
     out_dir = ledger.state_dir / "wake"
     # The run must be able to answer: let it write the ledger and yizhan's state folder.
     argv, workdir = adapters.wake_argv(prof, adapters.wake_prompt(prof, brief.cli_prefix()),
@@ -83,6 +86,7 @@ def _wake_once(ledger, seat, dry_run, pull, now, runner):
     out_dir.mkdir(parents=True, exist_ok=True)
     run = runner or _run
     log_path = out_dir / f"{seat}.log"
+    started = util.utcnow()
     result["returncode"] = rc = run(argv, workdir, log_path, float(ledger.settings["max_wake_run_s"]))
     result["action"] = "woke"
     with state.edit(ledger, st_name) as s:
@@ -94,6 +98,76 @@ def _wake_once(ledger, seat, dry_run, pull, now, runner):
             # check tries again. Every try still counts against the daily budget.
             s["woken"] = sorted(set(s.get("woken", [])) - set(result["ids"]))
             s["last_wake_error"] = _log_tail(log_path)
+    _end_turn(ledger, seat, started, result)
+    return result
+
+
+def _end_turn(ledger, seat, started, result):
+    """What the seat's own Stop hook does, done again once the woken run has exited: its
+    letters are final, the readers on this machine wake, and the letters go out. The run
+    is over when its process is, so the next step never waits on hooks that are missing
+    or not yet approved; when the hooks did run, this finds nothing left to do."""
+    mail.touch(ledger, seat, seal=True)
+    # The run's outcome is already recorded; like the Stop hook, a failure from here on
+    # is only noted, since the letters are final and a later check still finds them.
+    try:
+        result["kicked"] = kick(ledger, seat, since=started)
+    except Exception as e:  # noqa: BLE001
+        result["notes"].append(pick(f"没能叫醒收信方：{e}", f"Could not wake the readers: {e}"))
+    try:
+        if gitio.has_remote(ledger.root) and sync.needs_push(ledger, seat):
+            sync.sync(ledger, quick=True)
+    except (util.YizhanError, OSError) as e:
+        result["notes"].append(pick(f"推送没成功，下次同步再推：{e}", f"Push failed; the next sync retries: {e}"))
+
+
+def _relay(ledger, prof, ready, result, today, used, budget, open_ids, dry_run, runner):
+    """A seat without hooks (relay.py): yizhan hands it the letters one at a time and
+    sends back what it did. Then it ends the seat's turn for it: the replies are final,
+    and the seats they need, such as a reviewer, are woken at once."""
+    seat, st_name = prof["address"], f"seat-{prof['address']}"
+    out_dir = ledger.state_dir / "wake"
+    if dry_run:
+        result.update(action="dry_run", argv=relay.parse_template(relay.absolute(prof.get("command") or "")))
+        return result
+    out_dir.mkdir(parents=True, exist_ok=True)
+    started, done = util.utcnow(), []
+    for item in ready:
+        if used >= budget:
+            result.update(over_budget=True, used=used, budget=budget)
+            break
+        mid = item["meta"]["id"]
+        with state.edit(ledger, st_name) as s:      # recorded first: a slow run is never started twice
+            s["woken"] = sorted((set(s.get("woken", [])) & open_ids) | {mid})
+            s["wakes"] = {today: used + 1}
+            s["last_wake_at"] = util.iso(util.utcnow())
+        used += 1
+        log_path = out_dir / f"{seat}.log"
+        try:
+            r = relay.relay_one(ledger, prof, item, out_dir, float(ledger.settings["max_wake_run_s"]), run=runner)
+        except Exception as e:  # noqa: BLE001 - nobody is watching; the letter must not be lost
+            # A bad template, an unreadable letter, a reply that could not be written: the
+            # letter was not answered, so it is a failed run like any other.
+            with open(log_path, "a", encoding="utf-8") as log:
+                log.write(pick(f"处理 {mid} 时出错：{e}\n", f"Error while handling {mid}: {e}\n"))
+            r = {"letter": mid, "returncode": -1}
+        done.append(r)
+        with state.edit(ledger, st_name) as s:
+            s["last_wake_rc"] = r["returncode"]
+            if r["returncode"] == 0:
+                s.pop("last_wake_error", None)
+            else:
+                # Not handled: back to the queue for the next check, as for any failed wake.
+                s["woken"] = sorted(set(s.get("woken", [])) - {mid})
+                s["last_wake_error"] = _log_tail(log_path)
+        if r["returncode"] != 0:
+            break                                   # the command fails now; the next check tries again
+    if not done:
+        result.update(action="over_budget", used=used, budget=budget)
+        return result
+    result.update(action="relayed", returncode=done[-1]["returncode"],
+                  replies=[r["reply"] for r in done if r.get("reply")])
+    _end_turn(ledger, seat, started, result)        # the replies are final and wake their readers
     return result
 
 
@@ -206,8 +280,19 @@ def describe(r):
         return pick(f"{r['seat']}：今天已叫醒 {r['used']} 次，到了每天 {r['budget']} 次的上限，信先排队",
                     f"{r['seat']}: already woken {r['used']} time{'' if r['used'] == 1 else 's'} today, the "
                     f"daily limit is {r['budget']}; the letters stay queued")
+    if action == "relayed":
+        n = len(r.get("replies") or [])
+        if r.get("returncode"):
+            return pick(f"{r['seat']}：命令返回 {r['returncode']}，信放回待办，下次再试",
+                        f"{r['seat']}: the command exited with {r['returncode']}; the letter is queued again")
+        woke = r.get("kicked") or []
+        return pick(f"{r['seat']}：处理了 {n} 封信，答复已发出" + (f"，叫醒了 {'、'.join(woke)}" if woke else ""),
+                    f"{r['seat']}: handled {_letters(n)}, replies sent" + (f", woke {', '.join(woke)}" if woke else ""))
     if action == "dry_run":
         return pick(f"{r['seat']}：会叫醒它处理 {r['ready']} 封信，命令：{' '.join(r['argv'][:6])} …",
                     f"{r['seat']}: would wake it for {_letters(r['ready'])}, command: {' '.join(r['argv'][:6])} …")
-    return pick(f"{r['seat']}：已叫醒，处理 {r['ready']} 封信，返回码 {r.get('returncode')}",
-                f"{r['seat']}: woken for {_letters(r['ready'])}, exit code {r.get('returncode')}")
+    woke = r.get("kicked") or []
+    return pick(f"{r['seat']}：已叫醒，处理 {r['ready']} 封信，返回码 {r.get('returncode')}"
+                + (f"；跑完叫醒了 {'、'.join(woke)}" if woke else ""),
+                f"{r['seat']}: woken for {_letters(r['ready'])}, exit code {r.get('returncode')}"
+                + (f"; then woke {', '.join(woke)}" if woke else ""))

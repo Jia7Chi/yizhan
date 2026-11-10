@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Relay seats for agent CLIs without hooks, such as Qwen Code or Kimi Code: `yizhan seat add <name> --agent cli --command '<cli> -p {prompt}'`. yizhan writes the letter and its thread into the prompt, runs the command in the seat's folder, sends its final words and the diff of what it changed back as the reply, and wakes the sender, so Codex can hand out a task and review the result.
+- git commands ignore an inherited `GIT_INDEX_FILE` and friends; a scratch index takes the before/after snapshot of the work folder, so the repository's own index is never touched.
+- A woken Codex run ends its turn when its process exits: yizhan seals its letters, wakes their readers and pushes, even if Codex's own hooks are missing or not yet approved.
+- `--workdir` is stored as a full path, so a background job started in another folder still finds it.
+
 ## 0.1.0 (2026-11-01)
 
 First public release.

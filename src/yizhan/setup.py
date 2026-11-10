@@ -19,7 +19,7 @@ from pathlib import Path
 from . import adapters, brief, gitio, i18n, service, sync, util
 from . import ledger as ledger_mod
 from .i18n import pick
-from .ledger import AGENT_KINDS
+from .ledger import HOOKED_KINDS
 from .util import YizhanError
 
 # A starting split of the work; setup shows it as the default answer, so it is a
@@ -356,7 +356,7 @@ def seats_step(opts, ask, led, project, folder):
                  "Each AI on this machine gets a seat, addressed name@machine."))
     found = detect_agents()
     seats = []
-    for agent in AGENT_KINDS:
+    for agent in HOOKED_KINDS:
         display = adapters.get(agent).display
         if opts.agent:
             use = agent in opts.agent

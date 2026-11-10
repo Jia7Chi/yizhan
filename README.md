@@ -85,6 +85,28 @@ sequenceDiagram
 - **Three gates before every commit.** These are file ownership, anything that looks like a key or token, and a size limit. Any finding stops the whole batch.
 - **Plain text all the way down.** Letters are Markdown with a small JSON header, so you can read the ledger with `git log` and any editor.
 
+## Add any agent CLI (Qwen Code, Kimi Code, …)
+
+An agent without hooks can still take a seat, because yizhan does its mail for it. Register it with a command template, where `{prompt}` becomes the prompt:
+
+```bash
+yizhan seat add qwen --agent cli --title "Qwen Code" --path ~/code/shop \
+  --command "qwen -p {prompt} --approval-mode auto-edit"
+yizhan autowake on --as qwen@mac
+```
+
+When a letter for it is final, yizhan runs that command once in the seat's folder, with the letter (and the letters it answers) in the prompt. When the process exits, its last words and a list of the files it changed go back as the reply, the full diff is attached, and the sender is woken at once. So Codex can hand a task to a Chinese model and review the result, with nobody passing messages:
+
+```
+codex@mac ──request──▶ qwen@mac ──reply + diff──▶ codex@mac reviews ──reply──▶ qwen@mac fixes …
+```
+
+After two round trips it stops waking anyone, and what is left comes to you. A failed run sends nothing; the letter goes back to the queue.
+
+- **Permissions are the CLI's own.** What it may edit or run is set by the options in its template. Many CLIs refuse every tool that needs approval in a non-interactive run, so pick the narrowest mode that still lets it edit files, and check the exact option names with `<cli> --help`; they change between versions.
+- **Other templates.** `{prompt_file}` passes the prompt as a file. A template with neither placeholder sends it on standard input. Kimi Code (`kimi -p {prompt}`) and CodeBuddy Code (`codebuddy -p {prompt}`) take the same shape. On Windows, a CLI installed with npm is a `.cmd` script whose arguments pass through cmd.exe, so there only `{prompt_file}` or standard input will do.
+- **Its account, its quota.** Each wake is one run of that CLI on your own login or API key. yizhan never touches the credentials.
+
 ## Built with itself
 
 yizhan was built by two AIs working through yizhan. Claude Code (`claude@mac`) wrote the code; Codex (`codex@mac`) reviewed each change and wrote tests, receiving every request as a letter. The first review rounds ran in Codex sessions opened by hand. Once autowake existed, a request started Codex by itself, and in the later rounds nobody copied a message from one window to the other.
@@ -125,7 +147,7 @@ AI sessions use the same commands; the brief tells them how.
 
 **How fast is delivery?** On one machine, a letter is delivered when the sender's turn ends. Between machines it travels through git: at the recipient's next session start, at its next prompt, or within the autowake interval (5 minutes by default).
 
-**Which agents work with it?** Claude Code and Codex today. An adapter is a small table of facts (hook format, context budget, how to start a headless run), and pull requests for other agent CLIs are welcome.
+**Which agents work with it?** Claude Code and Codex get full seats with hooks. Any other agent CLI that can run one prompt and exit, such as Qwen Code, Kimi Code or CodeBuddy Code, joins as a relay seat (see above). Pull requests that add hook adapters for more agents are welcome.
 
 **Windows?** Yes. The tests run on Windows in CI, and hooks run through Git Bash, which is how Claude Code runs hooks there. PowerShell hosts are not supported yet.
 

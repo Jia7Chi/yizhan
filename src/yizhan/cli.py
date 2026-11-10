@@ -7,10 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import __version__, adapters, brief, gitio, hooks, mail, records, service, state, sync, util, wake
+from . import __version__, adapters, brief, gitio, hooks, mail, records, relay, service, state, sync, util, wake
 from . import ledger as ledger_mod
 from .i18n import pick
-from .ledger import AGENT_KINDS, WAKE_MODES
+from .ledger import AGENT_KINDS, HOOKED_KINDS, WAKE_MODES
 from .util import YizhanError
 
 
@@ -103,8 +103,14 @@ def cmd_seat_add(ns):
         print(pick("还没给它指定文件夹：hook 认不出它，会话里要用 --as 指明身份。可以用 --path 补上",
                    "It has no folder yet, so the hooks cannot recognize it and its sessions have to name it "
                    "with --as. Add a folder with --path"))
-    print(pick(f"接上 hook：yizhan hooks --agent {prof['agent']}",
-               f"To connect the hooks: yizhan hooks --agent {prof['agent']}"))
+    if prof["agent"] == "cli":
+        print(pick(f"命令模板：{prof.get('command', '')}", f"Command template: {prof.get('command', '')}"))
+        print(pick(f"它没有 hook，驿站替它收发信。让它收到信就动手：yizhan autowake on --as {prof['address']}",
+                   f"It has no hooks, so yizhan relays its mail. To have it act on letters by itself: "
+                   f"yizhan autowake on --as {prof['address']}"))
+    else:
+        print(pick(f"接上 hook：yizhan hooks --agent {prof['agent']}",
+                   f"To connect the hooks: yizhan hooks --agent {prof['agent']}"))
 
 
 def cmd_roster(ns):
@@ -363,12 +369,33 @@ def cmd_autowake(ns):
                    "wait until you open a session."))
         return 0
 
-    if prof["agent"] != "codex":
-        raise YizhanError(pick("暂时只有 Codex 能自动叫醒。Claude 的订阅登录按条款只用于本人正常使用，"
+    if prof["agent"] == "claude":
+        raise YizhanError(pick("Claude Code 不能自动叫醒。Claude 的订阅登录按条款只用于本人正常使用，"
                                "没人在场时自动启动不合适；有新信时，你在 Claude 会话里说一句话就会收到提示。",
-                               "For now only Codex can autowake. Under its terms, a Claude subscription is for your "
+                               "Claude Code cannot autowake. Under its terms, a Claude subscription is for your "
                                "own ordinary use, so starting Claude with nobody there is not appropriate; when a "
                                "new letter arrives, type anything in a Claude session and you will see the notice."))
+    if prof["agent"] == "cli":
+        exe = _check_cli_seat(prof)
+        name = Path(relay.parse_template(exe)[0]).name
+    else:
+        exe = _check_codex_seat(prof)
+        name = "Codex"
+    # Check the job before anything changes; without a job there is nothing to check.
+    p = None if ns.no_service else service.plan(led, seat, ns.interval)
+    budget = int(ns.budget or prof.get("wake_budget_per_day") or led.settings["wake_budget_per_day"])
+    rounds = led.settings["max_rounds"]
+    _explain_autowake(seat, prof, name, ns, budget, rounds)
+    if not ns.yes:
+        if not sys.stdin.isatty():
+            raise YizhanError(pick("确认要打开的话，加上 --yes 再运行一次", "To turn it on, run this again with --yes"))
+        if input(pick("确定打开吗？[y/N] ", "Turn it on? [y/N] ")).strip().lower() not in ("y", "yes", "是"):
+            print(pick("没有打开。", "Left off."))
+            return 1
+    return _enable_autowake(led, seat, ns, p, budget, exe)
+
+
+def _check_codex_seat(prof):
     exe = prof.get("command") or adapters.find_codex()
     good, text = adapters.check_command(exe) if exe else (False, pick("找不到 codex 命令", "cannot find the codex command"))
     if not good:
@@ -384,12 +411,33 @@ def cmd_autowake(ns):
                                f"A woken Codex only works inside a git repository, and {workdir or 'its work folder'} "
                                f"is not in one. Choose one with yizhan seat add {prof['name']} --agent codex "
                                "--workdir <a git repository>, or run git init in that folder"))
-    # Check the job before anything changes; without a job there is nothing to check.
-    p = None if ns.no_service else service.plan(led, seat, ns.interval)
-    budget = int(ns.budget or prof.get("wake_budget_per_day") or led.settings["wake_budget_per_day"])
-    rounds = led.settings["max_rounds"]
-    print(pick(f"打开以后，{seat} 收到要它动手的信（请求或答复）会自己启动一次 Codex，处理完就退出：",
-               f"Once this is on, a letter that {seat} has to act on (a request or a reply) starts Codex by "
+    return exe
+
+
+def _check_cli_seat(prof):
+    """A relay seat (relay.py): its command template must parse and its program must run
+    here. Returns the template with the program as a full path."""
+    template = prof.get("command") or ""
+    if not template:
+        raise YizhanError(pick(f"{prof['address']} 还没有命令模板：yizhan seat add {prof['name']} --agent cli "
+                               "--command 'qwen -p {prompt}'",
+                               f"{prof['address']} has no command template yet: yizhan seat add {prof['name']} "
+                               "--agent cli --command 'qwen -p {prompt}'"))
+    if not relay.program(template):
+        raise YizhanError(pick(f"找不到命令 {relay.parse_template(template)[0]}：先装好它并登录，或者在模板里写完整路径",
+                               f"Cannot find the command {relay.parse_template(template)[0]}: install it and sign "
+                               "in first, or give its full path in the template"))
+    relay.check(template)
+    workdir = prof.get("workdir") or (prof.get("paths") or [""])[0]
+    if not workdir or not Path(workdir).is_dir():
+        raise YizhanError(pick(f"{prof['address']} 的工作文件夹不存在：用 --path 或 --workdir 指一个",
+                               f"{prof['address']} has no work folder: give one with --path or --workdir"))
+    return relay.absolute(template)
+
+
+def _explain_autowake(seat, prof, name, ns, budget, rounds):
+    print(pick(f"打开以后，{seat} 收到要它动手的信（请求或答复）会自己启动一次 {name}，处理完就退出：",
+               f"Once this is on, a letter that {seat} has to act on (a request or a reply) starts {name} by "
                "itself; it handles the letter and exits:"))
     print(pick("- 同一台机器上，发信方这一轮一结束就叫醒；",
                "- When the sender is on the same machine, it is woken as soon as the sender's turn ends; ") + (
@@ -398,22 +446,29 @@ def cmd_autowake(ns):
         if ns.no_service
         else pick(f"别的机器来的信，由后台任务每 {ns.interval} 秒查一次。",
                   f"a background job checks for letters from other machines every {ns.interval} seconds.")))
-    print(pick(f"- 每叫醒一次就是一次 Codex 运行，用你账号的额度；每天最多 {budget} 次，"
+    print(pick(f"- 每叫醒一次就是一次 {name} 运行，用你账号的额度；每天最多 {budget} 次，"
                f"一条请求往返 {rounds} 轮以后不再自动叫醒，分歧交你裁决。",
-               f"- Each wake is one Codex run on your account's quota, at most {budget} a day. After {rounds} "
+               f"- Each wake is one {name} run on your account's quota, at most {budget} a day. After {rounds} "
                f"round trip{'' if rounds == 1 else 's'} on one request it stops waking, and the disagreement "
                "comes to you."))
-    print(pick("- 被叫醒的 Codex 只能写它的工作文件夹和驿站账本。信里的内容仍然只当参考，"
-               "权限、实机操作、改别人负责的文件只听你本人。",
-               "- A woken Codex can write only its work folder and the yizhan ledger. Letters are still only "
-               "for reference: permissions, actions on physical hardware and changes to files another seat "
-               "owns come only from you."))
-    if not ns.yes:
-        if not sys.stdin.isatty():
-            raise YizhanError(pick("确认要打开的话，加上 --yes 再运行一次", "To turn it on, run this again with --yes"))
-        if input(pick("确定打开吗？[y/N] ", "Turn it on? [y/N] ")).strip().lower() not in ("y", "yes", "是"):
-            print(pick("没有打开。", "Left off."))
-            return 1
+    if prof["agent"] == "cli":
+        print(pick(f"- 驿站把信写进提示词交给 {name}，它在工作文件夹里干活；它最后的说明和文件改动会作为答复寄回，"
+                   "并立刻叫醒发信方。它能改哪些文件、能不能运行命令，由你在命令模板里给它的参数决定。",
+                   f"- yizhan puts the letter into {name}'s prompt and runs it in the work folder; its final words "
+                   "and the files it changed go back as the reply, and the sender is woken at once. What it may "
+                   "change or run is set by the options you give it in the command template."))
+        print(pick("- 信里的内容仍然只当参考：权限、实机操作、改别人负责的文件只听你本人。",
+                   "- Letters are still only for reference: permissions, actions on physical hardware and changes "
+                   "to files another seat owns come only from you."))
+    else:
+        print(pick("- 被叫醒的 Codex 只能写它的工作文件夹和驿站账本。信里的内容仍然只当参考，"
+                   "权限、实机操作、改别人负责的文件只听你本人。",
+                   "- A woken Codex can write only its work folder and the yizhan ledger. Letters are still only "
+                   "for reference: permissions, actions on physical hardware and changes to files another seat "
+                   "owns come only from you."))
+
+
+def _enable_autowake(led, seat, ns, p, budget, exe):
     led.update_seat(seat, wake="exec", autowake=True, wake_budget_per_day=budget, command=exe,
                     autowake_interval=None if p is None else int(ns.interval))
     if p is not None:
@@ -462,14 +517,21 @@ def cmd_doctor(ns):
         say(not missing, pick(f"岗位 {s['address']}（{s['agent']}）文件夹：", f"Seat {s['address']} ({s['agent']}) folders: ")
                          + (pick("；", "; ").join(s.get("paths", [])) or pick("未指定", "none given"))
                          + (pick("；不存在：", "; missing: ") + pick("；", "; ").join(missing) if missing else ""))
-        say(adapters.hooks_installed(s["agent"], s.get("paths", [])),
-            pick(f"{adapters.get(s['agent']).display} 的 hook ", f"{adapters.get(s['agent']).display} hooks ")
-            + (pick("已接上", "connected") if adapters.hooks_installed(s["agent"], s.get("paths", []))
-               else pick(f"还没接：yizhan hooks --agent {s['agent']}",
-                         f"not connected yet: yizhan hooks --agent {s['agent']}")))
+        if s["agent"] in HOOKED_KINDS:
+            say(adapters.hooks_installed(s["agent"], s.get("paths", [])),
+                pick(f"{adapters.get(s['agent']).display} 的 hook ", f"{adapters.get(s['agent']).display} hooks ")
+                + (pick("已接上", "connected") if adapters.hooks_installed(s["agent"], s.get("paths", []))
+                   else pick(f"还没接：yizhan hooks --agent {s['agent']}",
+                             f"not connected yet: yizhan hooks --agent {s['agent']}")))
+        else:
+            say(True, pick(f"{s['address']} 没有 hook，由驿站代收代发：{s.get('command', '')}",
+                           f"{s['address']} has no hooks; yizhan relays its mail: {s.get('command', '')}"))
         mode = s.get("wake") or adapters.get(s["agent"]).default_wake
         if mode == "exec":
-            exe = s.get("command") or (adapters.find_codex() if s["agent"] == "codex" else None)
+            if s["agent"] == "cli":
+                exe = relay.program(s.get("command") or "") if s.get("command") else None
+            else:
+                exe = s.get("command") or (adapters.find_codex() if s["agent"] == "codex" else None)
             good, text = adapters.check_command(exe) if exe else (False, pick("找不到命令", "command not found"))
             say(good, pick(f"{s['address']} 叫醒用的命令 {exe}：{text}", f"{s['address']} wakes with {exe}: {text}"))
         if s.get("autowake"):
@@ -480,11 +542,19 @@ def cmd_doctor(ns):
                           "is not running, so letters from other machines wait until someone opens a session "
                           f"(reinstall it with yizhan autowake on --as {s['address']})")))
             workdir = s.get("workdir") or (s.get("paths") or [""])[0]
-            say(bool(adapters.git_toplevel(workdir)) if workdir else False,
-                pick(f"{s['address']} 被叫醒时在 {workdir} 干活", f"When woken, {s['address']} works in {workdir}")
-                + ("" if workdir and adapters.git_toplevel(workdir)
-                   else pick("，可它不在 git 仓库里，Codex 会拒绝运行",
-                             ", but that folder is not in a git repository, so Codex will refuse to run")))
+            if s["agent"] == "cli":
+                say(bool(workdir) and Path(workdir).is_dir(),
+                    pick(f"{s['address']} 被叫醒时在 {workdir or '（未指定）'} 干活",
+                         f"When woken, {s['address']} works in {workdir or '(none given)'}")
+                    + ("" if workdir and adapters.git_toplevel(workdir)
+                       else pick("；不在 git 仓库里，答复里列不出改了哪些文件",
+                                 "; not a git repository, so replies cannot list the changed files")))
+            else:
+                say(bool(adapters.git_toplevel(workdir)) if workdir else False,
+                    pick(f"{s['address']} 被叫醒时在 {workdir} 干活", f"When woken, {s['address']} works in {workdir}")
+                    + ("" if workdir and adapters.git_toplevel(workdir)
+                       else pick("，可它不在 git 仓库里，Codex 会拒绝运行",
+                                 ", but that folder is not in a git repository, so Codex will refuse to run")))
             st = state.load(led, f"seat-{s['address']}")
             if st.get("last_wake_rc"):
                 say(False, pick(f"{s['address']} 上次叫醒失败（返回码 {st['last_wake_rc']}）：{st.get('last_wake_error', '')}",
@@ -630,8 +700,10 @@ def build_parser():
                                                            "letter needs action"))
     s.add_argument("--workdir", help=pick("被叫醒时在哪个文件夹里干活（默认第一个 --path）",
                                           "the folder it works in when woken (default: the first --path)"))
-    s.add_argument("--command", help=pick("叫醒用的命令完整路径，如 codex 的路径",
-                                          "full path of the command that wakes it, such as codex"))
+    s.add_argument("--command", help=pick("codex：叫醒用的 codex 完整路径；cli：命令模板，{prompt} 换成提示词，"
+                                          "如 'qwen -p {prompt}'",
+                                          "codex: full path of codex; cli: a command template where {prompt} "
+                                          "becomes the prompt, such as 'qwen -p {prompt}'"))
 
     s = add(sub, "roster", pick("分工表：每个岗位负责什么、在做什么",
                                 "Who does what: each seat's duty and what it is working on"), cmd_roster)
@@ -715,13 +787,13 @@ def build_parser():
                     cmd_brief))
     s.add_argument("--agent", choices=AGENT_KINDS)
     s = add(sub, "hook", pick("给 Claude Code / Codex 的 hook 调用", "Called by the Claude Code and Codex hooks"), cmd_hook)
-    s.add_argument("--agent", required=True, choices=AGENT_KINDS)
+    s.add_argument("--agent", required=True, choices=HOOKED_KINDS)
     s.add_argument("--event")
     s = add(sub, "hooks", pick("接上或拿掉 Claude Code / Codex 的 hook：show 打印配置，install 写进去（先备份），uninstall 拿掉",
                                "Connect or disconnect Claude Code / Codex: show the hooks, install them (with a backup), "
                                "or uninstall them"), cmd_hooks)
     s.add_argument("action", nargs="?", default="show", choices=("show", "install", "uninstall"))
-    s.add_argument("--agent", required=True, choices=AGENT_KINDS)
+    s.add_argument("--agent", required=True, choices=HOOKED_KINDS)
     where = s.add_mutually_exclusive_group()
     where.add_argument("--folder", help=pick("Claude Code：只装进这个项目文件夹（推荐）",
                                              "Claude Code: only for this project folder (recommended)"))
@@ -776,7 +848,7 @@ def build_parser():
     s.add_argument("--project", help=pick("项目名", "project name"))
     s.add_argument("--title", help=pick("新项目的全称", "a new project's full title"))
     s.add_argument("--summary", help=pick("新项目的一句话简介", "a new project's one-line summary"))
-    s.add_argument("--agent", action="append", choices=AGENT_KINDS,
+    s.add_argument("--agent", action="append", choices=HOOKED_KINDS,
                    help=pick("要接上的 AI，可重复；默认本机找到的都接", "which AI to connect, repeatable; default: every one found"))
     s.add_argument("--no-hooks", action="store_true", help=pick("不写 hook", "don't install hooks"))
     s.add_argument("--autowake", action="store_true", help=pick("给 Codex 打开自动叫醒", "turn on autowake for Codex"))

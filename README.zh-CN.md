@@ -85,6 +85,28 @@ sequenceDiagram
 - **每次提交前过三道闸**：文件归属、疑似密钥或令牌、文件大小。查出任何一项，整批都不提交。
 - **从头到尾都是纯文本**：信就是带一小段 JSON 头的 Markdown，用 `git log` 和随便哪个编辑器都能看。
 
+## 接入任意命令行 AI（通义千问 Qwen Code、Kimi Code 等）
+
+没有 hook 的 AI 也能占一个岗位，驿站替它收发信。登记时给一个命令模板，`{prompt}` 会换成提示词：
+
+```bash
+yizhan seat add qwen --agent cli --title "通义千问" --path ~/code/shop \
+  --command "qwen -p {prompt} --approval-mode auto-edit"
+yizhan autowake on --as qwen@mac
+```
+
+给它的信一定稿，驿站就在它的工作文件夹里把这条命令跑一次，把这封信和前面的往来写进提示词。进程一退出，它最后说的话和改了哪些文件就作为答复寄回，完整改动作为附件附上，同时叫醒发信方。这样 Codex 就能把任务派给国产模型，干完自己审核，中间不用人传话：
+
+```
+codex@mac ──请求──▶ qwen@mac ──答复 + 改动──▶ codex@mac 审核 ──答复──▶ qwen@mac 返工 …
+```
+
+往返两轮以后不再叫醒，剩下的交给你。运行失败不会寄出任何东西，信放回待办，下次再试。
+
+- **权限用它自己的。** 它能改哪些文件、能不能运行命令，由模板里的参数决定。很多命令行在无人值守时，遇到要审批的工具会一律拒绝，所以选一个刚好能改文件的最小权限。参数名各版本不一样，先用 `<命令> --help` 核对。
+- **别的写法。** `{prompt_file}` 把提示词写进文件再传；两个占位符都不写，提示词就从标准输入送进去。Kimi Code（`kimi -p {prompt}`）、腾讯 CodeBuddy Code（`codebuddy -p {prompt}`）也是同一种写法。Windows 上用 npm 装的命令其实是 `.cmd` 脚本，参数要先经过 cmd.exe，所以在那里只能用 `{prompt_file}` 或标准输入。
+- **用它自己的账号和额度。** 每叫醒一次，就是用你自己的登录或 API 密钥跑一次这个命令行。驿站从不碰登录凭据。
+
 ## 它是用自己做出来的
 
 驿站本身就是两个 AI 通过驿站合作写出来的。Claude Code（`claude@mac`）写代码，Codex（`codex@mac`）复核每次改动、补测试，每个请求都以信的形式送到它手上。头几轮复核是手动开的 Codex 会话；有了自动叫醒以后，请求一到，Codex 就自己启动，后面几轮再没有人在两个窗口之间搬消息。
@@ -125,7 +147,7 @@ AI 会话用的也是这些命令，开场简报会教它们怎么用。
 
 **信多久能送到？** 同一台机器上，发信方这一轮一结束就送到。跨机器要经过 git：对方下次开会话或下次说话时就能看到，开着自动叫醒的话，最迟一个检查间隔（默认 5 分钟）。
 
-**支持哪些 AI？** 目前是 Claude Code 和 Codex。接一家新的 AI，只要写一张小小的适配表（hook 格式、简报长度上限、怎样无人值守地启动），欢迎提 PR。
+**支持哪些 AI？** Claude Code 和 Codex 有 hook，是完整的岗位。别的命令行 AI，只要能跑一次提示词就退出，比如通义千问 Qwen Code、Kimi Code、腾讯 CodeBuddy Code，都能以代收代发的岗位接进来（见上文）。欢迎提 PR，给更多 AI 写 hook 适配。
 
 **Windows 能用吗？** 能。CI 在 Windows 上跑测试；hook 经 Git Bash 执行，Claude Code 在 Windows 上本来就这样跑 hook。PowerShell 暂不支持。
 
