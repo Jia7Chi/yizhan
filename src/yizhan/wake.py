@@ -24,12 +24,43 @@ from .i18n import pick
 
 
 def wake_once(ledger, seat, dry_run=False, pull=True, now=None, runner=None):
-    """Check once and start one headless run if letters are ready. Only one waker per
-    seat runs at a time; another one started meanwhile returns action "busy"."""
-    with util.try_file_lock(ledger.state_dir / f"wake-{seat}.lock") as got:
-        if not got:
-            return {"seat": seat, "action": "busy", "notes": []}
-        return _wake_once(ledger, seat, dry_run, pull, now, runner)
+    """Check once and start a headless run if letters are ready. Only one waker per seat
+    runs at a time. One started meanwhile leaves a note and returns "busy"; the running
+    waker looks for that note once it has let go of the lock and, if it is there, checks
+    again. So a letter that arrives during a run (a fast reply, say) is handled when the
+    run ends instead of waiting for the next trigger, and nothing polls."""
+    lock, again = ledger.state_dir / f"wake-{seat}.lock", ledger.state_dir / f"wake-{seat}.again"
+    first = None
+    while True:
+        with util.try_file_lock(lock) as got:
+            if not got:
+                if not dry_run:
+                    _flag(again)
+                return first or {"seat": seat, "action": "busy", "notes": []}
+            _take(again)                            # a note left before this check is covered by it
+            r = _wake_once(ledger, seat, dry_run, pull and first is None, now if first is None else None, runner)
+        first = first or r
+        if dry_run or not _take(again):
+            return first
+
+
+def _flag(path):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    except OSError:
+        pass
+
+
+def _take(path):
+    """Remove the note; True if it was there."""
+    try:
+        path.unlink()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
 
 
 def _wake_once(ledger, seat, dry_run, pull, now, runner):
@@ -45,8 +76,11 @@ def _wake_once(ledger, seat, dry_run, pull, now, runner):
     items = mail.inbox(ledger, seat)
     open_ids = {it["meta"]["id"] for it in items}
     st_name = f"seat-{seat}"
-    woken = set(state.load(ledger, st_name).get("woken", [])) & open_ids
-    pending = [it for it in items if it["meta"].get("wake") and it["meta"]["id"] not in woken]
+    st0 = state.load(ledger, st_name)
+    woken = set(st0.get("woken", [])) & open_ids
+    # A letter whose prompt cannot fit this template's command line waits for a new template.
+    paused = {k for k, v in (st0.get("paused") or {}).items() if v == prof.get("command")}
+    pending = [it for it in items if it["meta"].get("wake") and it["meta"]["id"] not in woken | paused]
     limit = float(ledger.settings["max_delivery_delay_s"])
     ready = []
     for it in pending:
@@ -86,8 +120,13 @@ def _wake_once(ledger, seat, dry_run, pull, now, runner):
     out_dir.mkdir(parents=True, exist_ok=True)
     run = runner or _run
     log_path = out_dir / f"{seat}.log"
-    started = util.utcnow()
-    result["returncode"] = rc = run(argv, workdir, log_path, float(ledger.settings["max_wake_run_s"]))
+    started, error = util.utcnow(), None
+    try:
+        rc = run(argv, workdir, log_path, float(ledger.settings["max_wake_run_s"]))
+    except Exception as e:  # noqa: BLE001 - an unwritable log, say: still a failed run, not a lost letter
+        rc, error = -1, pick(f"叫醒失败：{e}", f"Wake failed: {e}")
+        _note(log_path, error)
+    result["returncode"] = rc
     result["action"] = "woke"
     with state.edit(ledger, st_name) as s:
         s["last_wake_rc"] = rc
@@ -97,7 +136,7 @@ def _wake_once(ledger, seat, dry_run, pull, now, runner):
             # The run failed, so these letters were not handled: put them back so the next
             # check tries again. Every try still counts against the daily budget.
             s["woken"] = sorted(set(s.get("woken", [])) - set(result["ids"]))
-            s["last_wake_error"] = _log_tail(log_path)
+            s["last_wake_error"] = error or _log_tail(log_path)
     _end_turn(ledger, seat, started, result)
     return result
 
@@ -108,12 +147,23 @@ def _end_turn(ledger, seat, started, result):
     is over when its process is, so the next step never waits on hooks that are missing
     or not yet approved; when the hooks did run, this finds nothing left to do."""
     mail.touch(ledger, seat, seal=True)
-    # The run's outcome is already recorded; like the Stop hook, a failure from here on
-    # is only noted, since the letters are final and a later check still finds them.
+    _wake_readers(ledger, seat, started, result)
+    _push(ledger, seat, result)
+
+
+# The run's outcome is already recorded when these run. Like the Stop hook, a failure
+# here is only noted: the letters are final, and a later check still finds them.
+
+def _wake_readers(ledger, seat, since, result):
     try:
-        result["kicked"] = kick(ledger, seat, since=started)
+        new = kick(ledger, seat, since=since)
     except Exception as e:  # noqa: BLE001
         result["notes"].append(pick(f"没能叫醒收信方：{e}", f"Could not wake the readers: {e}"))
+        return
+    result["kicked"] = result.get("kicked", []) + [k for k in new if k not in result.get("kicked", [])]
+
+
+def _push(ledger, seat, result):
     try:
         if gitio.has_remote(ledger.root) and sync.needs_push(ledger, seat):
             sync.sync(ledger, quick=True)
@@ -123,15 +173,15 @@ def _end_turn(ledger, seat, started, result):
 
 def _relay(ledger, prof, ready, result, today, used, budget, open_ids, dry_run, runner):
     """A seat without hooks (relay.py): yizhan hands it the letters one at a time and
-    sends back what it did. Then it ends the seat's turn for it: the replies are final,
-    and the seats they need, such as a reviewer, are woken at once."""
+    sends back what it did. Each reply is final when it is written, so its reader, such
+    as a reviewer, is woken right then rather than after the whole batch."""
     seat, st_name = prof["address"], f"seat-{prof['address']}"
     out_dir = ledger.state_dir / "wake"
     if dry_run:
         result.update(action="dry_run", argv=relay.parse_template(relay.absolute(prof.get("command") or "")))
         return result
     out_dir.mkdir(parents=True, exist_ok=True)
-    started, done = util.utcnow(), []
+    done = []
     for item in ready:
         if used >= budget:
             result.update(over_budget=True, used=used, budget=budget)
@@ -142,33 +192,56 @@ def _relay(ledger, prof, ready, result, today, used, budget, open_ids, dry_run, 
             s["wakes"] = {today: used + 1}
             s["last_wake_at"] = util.iso(util.utcnow())
         used += 1
-        log_path = out_dir / f"{seat}.log"
+        started, log_path = util.utcnow(), out_dir / f"{seat}.log"
         try:
             r = relay.relay_one(ledger, prof, item, out_dir, float(ledger.settings["max_wake_run_s"]), run=runner)
         except Exception as e:  # noqa: BLE001 - nobody is watching; the letter must not be lost
             # A bad template, an unreadable letter, a reply that could not be written: the
             # letter was not answered, so it is a failed run like any other.
-            with open(log_path, "a", encoding="utf-8") as log:
-                log.write(pick(f"处理 {mid} 时出错：{e}\n", f"Error while handling {mid}: {e}\n"))
-            r = {"letter": mid, "returncode": -1}
+            error = pick(f"处理 {mid} 时出错：{e}", f"Error while handling {mid}: {e}")
+            _note(log_path, error)
+            r = {"letter": mid, "returncode": -1, "error": error}
         done.append(r)
         with state.edit(ledger, st_name) as s:
-            s["last_wake_rc"] = r["returncode"]
-            if r["returncode"] == 0:
-                s.pop("last_wake_error", None)
-            else:
-                # Not handled: back to the queue for the next check, as for any failed wake.
+            s["paused"] = {k: v for k, v in (s.get("paused") or {}).items() if k in open_ids and k != mid}
+            if r.get("paused"):
+                # The command never started, so this try uses none of the day's runs; the
+                # letter waits until the template changes, and the others go on.
                 s["woken"] = sorted(set(s.get("woken", [])) - {mid})
-                s["last_wake_error"] = _log_tail(log_path)
+                s["paused"][mid] = r["paused"]
+                s["wakes"] = {today: used - 1}
+            else:
+                s["last_wake_rc"] = r["returncode"]
+                if r["returncode"] == 0:
+                    s.pop("last_wake_error", None)
+                else:
+                    # Not handled: back to the queue for the next check, as for any failed wake.
+                    s["woken"] = sorted(set(s.get("woken", [])) - {mid})
+                    s["last_wake_error"] = r.get("error") or _log_tail(log_path)
+        if r.get("paused"):
+            used -= 1
+            continue
         if r["returncode"] != 0:
             break                                   # the command fails now; the next check tries again
+        _wake_readers(ledger, seat, started, result)   # this reply's reader starts now
     if not done:
         result.update(action="over_budget", used=used, budget=budget)
         return result
     result.update(action="relayed", returncode=done[-1]["returncode"],
-                  replies=[r["reply"] for r in done if r.get("reply")])
-    _end_turn(ledger, seat, started, result)        # the replies are final and wake their readers
+                  replies=[r["reply"] for r in done if r.get("reply")],
+                  paused=[r["letter"] for r in done if r.get("paused")])
+    mail.touch(ledger, seat, seal=True)             # the turn is over
+    _push(ledger, seat, result)
     return result
+
+
+def _note(path, text):
+    """Add a line to a log if it can be written; a log is never worth losing a letter over."""
+    try:
+        with open(path, "a", encoding="utf-8") as log:
+            log.write(text + "\n")
+    except OSError:
+        pass
 
 
 def _log_tail(path, lines=3):
@@ -184,14 +257,14 @@ def _run(argv, workdir, log_path, timeout):
         log.write(f"\n===== {util.iso(util.utcnow())} {argv[0]} {argv[1] if len(argv) > 1 else ''}\n")
         log.flush()
         try:
-            return subprocess.run(argv, cwd=workdir, stdout=log, stderr=subprocess.STDOUT,
-                                  stdin=subprocess.DEVNULL, timeout=timeout).returncode
-        except subprocess.TimeoutExpired:
-            log.write(pick(f"超过 {timeout:g} 秒，已停止\n", f"Ran longer than {timeout:g} s, stopped\n"))
-            return -1
+            rc = util.run_tree(argv, workdir, log, subprocess.STDOUT, timeout)
         except OSError as e:
             log.write(pick(f"启动失败：{e}\n", f"Could not start: {e}\n"))
             return -1
+        if rc is None:
+            log.write(pick(f"超过 {timeout:g} 秒，已停止\n", f"Ran longer than {timeout:g} s, stopped\n"))
+            return -1
+        return rc
 
 
 # ---------- waking at the moment the sender's turn ends ----------

@@ -14,7 +14,9 @@ import json
 import os
 import re
 import shutil
+import signal
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -274,6 +276,46 @@ def try_file_lock(path):
                 _unlock(f)
     finally:
         f.close()
+
+
+# ---------- a command and everything it starts ----------
+
+def run_tree(argv, cwd, stdout, stderr, timeout, input_text=None):
+    """Run argv at the head of a process group of its own and wait for it. When it exits,
+    or is still running after `timeout` seconds, whatever it started that is still in that
+    group is ended as well: an agent's tools must not go on changing files after the run
+    is over, nor overlap the next run of the same letter. Returns the exit code, or None
+    when the time ran out; raises OSError when the command cannot start.
+
+    On Windows the tree is ended with taskkill on a timeout only; processes left behind
+    by a command that exits normally are not tracked there."""
+    group = {"creationflags": 0x00000200} if os.name == "nt" else {"start_new_session": True}  # CREATE_NEW_PROCESS_GROUP
+    text = {"text": True, "encoding": "utf-8", "errors": "replace"} if input_text is not None else {}
+    proc = subprocess.Popen(argv, cwd=cwd, stdout=stdout, stderr=stderr,
+                            stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
+                            **group, **text)
+    try:
+        proc.communicate(input=input_text, timeout=timeout)
+        return proc.returncode
+    except subprocess.TimeoutExpired:
+        return None
+    finally:
+        _end_tree(proc)
+        if proc.stdin:
+            with contextlib.suppress(OSError):
+                proc.stdin.close()
+
+
+def _end_tree(proc):
+    if os.name == "nt":
+        if proc.poll() is None:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)     # the group keeps the leader's id
+        except (ProcessLookupError, PermissionError):
+            pass                                     # nothing left in it
+    proc.wait()
 
 
 # ---------- places ----------

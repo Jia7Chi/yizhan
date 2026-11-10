@@ -104,7 +104,7 @@ codex@mac ──request──▶ qwen@mac ──reply + diff──▶ codex@mac 
 After two round trips it stops waking anyone, and what is left comes to you. A failed run sends nothing; the letter goes back to the queue.
 
 - **Permissions are the CLI's own.** What it may edit or run is set by the options in its template. Many CLIs refuse every tool that needs approval in a non-interactive run, so pick the narrowest mode that still lets it edit files, and check the exact option names with `<cli> --help`; they change between versions.
-- **Other templates.** `{prompt_file}` passes the prompt as a file. A template with neither placeholder sends it on standard input. Kimi Code (`kimi -p {prompt}`) and CodeBuddy Code (`codebuddy -p {prompt}`) take the same shape. On Windows, a CLI installed with npm is a `.cmd` script whose arguments pass through cmd.exe, so there only `{prompt_file}` or standard input will do.
+- **Other templates.** `{prompt_file}` passes the prompt as a file. A template with neither placeholder sends it on standard input. Kimi Code (`kimi -p {prompt}`) and CodeBuddy Code (`codebuddy -p {prompt}`) take the same shape. On Windows, a CLI installed with npm is a `.cmd` script whose arguments pass through cmd.exe, so there only `{prompt_file}` or standard input will do. Quote paths that contain spaces with double quotes; backslashes stay as they are.
 - **Its account, its quota.** Each wake is one run of that CLI on your own login or API key. yizhan never touches the credentials.
 
 ## Built with itself

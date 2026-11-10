@@ -39,16 +39,19 @@ def _env(root, network):
     return env
 
 
-def git(root, *args, timeout=60, check=True, network=False, input_text=None, env_extra=None):
+def git(root, *args, timeout=60, check=True, network=False, input_text=None, env_extra=None, raw=False):
     """Run git in `root`. `env_extra` sets variables on purpose, such as a scratch
-    GIT_INDEX_FILE; inherited ones that would point git elsewhere are always dropped."""
+    GIT_INDEX_FILE; inherited ones that would point git elsewhere are always dropped.
+    With raw=True, stdout comes back as bytes, exactly as git wrote it (a patch, say)."""
     # --literal-pathspecs: a file named "a*.md" means that file, not a glob.
     cmd = ["git", "-c", "core.quotepath=off", "-C", str(root), "--literal-pathspecs", *args]
     env = _env(root, network) if network else base_env()
     env.update(env_extra or {})
+    text = {} if raw else {"text": True, "encoding": "utf-8", "errors": "replace"}
     try:
-        r = subprocess.run(cmd, input=input_text, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout, env=env)
+        r = subprocess.run(cmd, input=input_text, capture_output=True, timeout=timeout, env=env, **text)
+        if raw:
+            r.stderr = r.stderr.decode("utf-8", errors="replace")
     except FileNotFoundError:
         raise GitError(pick("没找到 git 命令，请先安装 git",
                             "The git command was not found; install git first")) from None
@@ -56,7 +59,7 @@ def git(root, *args, timeout=60, check=True, network=False, input_text=None, env
         raise GitError(pick(f"git {args[0]} 超过 {timeout} 秒没完成",
                             f"git {args[0]} did not finish within {timeout} s")) from None
     if check and r.returncode != 0:
-        msg = " ".join((r.stderr or r.stdout or "").split())[:400]
+        msg = " ".join((r.stderr or ("" if raw else r.stdout) or "").split())[:400]
         raise GitError(pick(f"git {' '.join(args[:2])} 失败：{msg}", f"git {' '.join(args[:2])} failed: {msg}"))
     return r
 

@@ -16,6 +16,7 @@ reads its arguments by its own rules, so there the prompt never goes on the comm
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 import shlex
@@ -33,10 +34,59 @@ PLACEHOLDERS = ("{prompt}", "{prompt_file}")
 
 # ---------- the command ----------
 
+def split_command(text, windows=None):
+    """The words of a command line. POSIX shell quoting, or on Windows the rules programs
+    use there (those of CommandLineToArgvW): double quotes group words, and a backslash is
+    an ordinary character unless it comes before a quote, so C:\\tools\\kimi.exe stays whole."""
+    if not (os.name == "nt" if windows is None else windows):
+        return shlex.split(text)
+    words, word, in_word, quoted, i = [], [], False, False, 0
+    while i < len(text):
+        c = text[i]
+        if c == "\\":
+            j = i
+            while j < len(text) and text[j] == "\\":
+                j += 1
+            if j < len(text) and text[j] == '"':
+                word.append("\\" * ((j - i) // 2))     # 2n backslashes + quote: n of them, then the quote acts
+                if (j - i) % 2:
+                    word.append('"')                   # 2n+1: n of them and a literal quote
+                    j += 1
+            else:
+                word.append("\\" * (j - i))
+            i, in_word = j, True
+        elif c == '"':
+            if quoted and text[i + 1:i + 2] == '"':
+                word.append('"')                       # "" inside quotes is one literal quote
+                i += 2
+            else:
+                quoted = not quoted
+                i += 1
+            in_word = True
+        elif c in " \t" and not quoted:
+            if in_word:
+                words.append("".join(word))
+                word, in_word = [], False
+            i += 1
+        else:
+            word.append(c)
+            in_word, i = True, i + 1
+    if quoted:
+        raise ValueError("No closing quotation")
+    if in_word:
+        words.append("".join(word))
+    return words
+
+
+def join_command(words, windows=None):
+    """The inverse of split_command."""
+    return subprocess.list2cmdline(words) if (os.name == "nt" if windows is None else windows) else shlex.join(words)
+
+
 def parse_template(template):
     """The template's words; raises YizhanError if it cannot be a command."""
     try:
-        words = shlex.split(template or "")
+        words = split_command(template or "")
     except ValueError as e:
         raise YizhanError(pick(f"命令模板写错了：{e}", f"The command template cannot be parsed: {e}")) from None
     if not words or words[0] in PLACEHOLDERS:
@@ -50,9 +100,11 @@ def program(template):
     first = parse_template(template)[0]
     found = shutil.which(os.path.expanduser(first))
     if found:
-        return found
+        # which() answers "./agent" (or a relative folder on PATH) relatively: pin it to
+        # where it was found, or the next run from another folder cannot start it.
+        return os.path.abspath(found)
     path = Path(first).expanduser()
-    return str(path) if path.is_file() and os.access(path, os.X_OK) else None
+    return str(path.resolve()) if path.is_file() and os.access(path, os.X_OK) else None
 
 
 def absolute(template):
@@ -60,7 +112,7 @@ def absolute(template):
     or a hook, whose PATH may hold only the system folders, still finds it."""
     words = parse_template(template)
     found = program(template)
-    return shlex.join([found] + words[1:]) if found and found != words[0] else template
+    return join_command([found] + words[1:]) if found and found != words[0] else template
 
 
 def check(template):
@@ -164,6 +216,13 @@ def snapshot(folder, index_path):
         env = {"GIT_INDEX_FILE": str(index_path)}
         if not real_path.is_file() and gitio.head(top):
             gitio.git(top, "read-tree", "HEAD", env_extra=env)
+        # A file marked assume-unchanged is never looked at again, so its edits would
+        # be missed: clear that mark, in the copy only. (ls-files -v shows it lowercase.)
+        listing = gitio.git(top, "ls-files", "-v", "-z", env_extra=env).stdout
+        assumed = [e[2:] for e in listing.split("\0") if len(e) > 2 and e[0].islower()]
+        if assumed:
+            gitio.git(top, "update-index", "-z", "--no-assume-unchanged", "--stdin",
+                      input_text="\0".join(assumed) + "\0", env_extra=env)
         gitio.git(top, "add", "-A", env_extra=env, timeout=300)
         return top, gitio.git(top, "write-tree", env_extra=env).stdout.strip()
     except (OSError, YizhanError):
@@ -182,9 +241,11 @@ def changes(before, after, patch_path):
     if before[1] == after[1]:
         return pick("没有改动文件。", "No files changed."), None
     stat = gitio.git(top, "diff", "--stat", "--no-color", before[1], after[1], check=False).stdout.rstrip()
-    patch = gitio.git(top, "diff", "--no-color", "--binary", before[1], after[1], check=False).stdout
+    # Bytes as git wrote them: decoding would turn CRLF into LF and other encodings into
+    # replacement characters, and the patch would no longer apply.
+    patch = gitio.git(top, "diff", "--no-color", "--binary", before[1], after[1], check=False, raw=True).stdout
     Path(patch_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(patch_path).write_text(patch, encoding="utf-8")
+    Path(patch_path).write_bytes(patch)
     return stat, Path(patch_path)
 
 
@@ -197,19 +258,25 @@ def run_cli(argv, workdir, stdin_text, out_path, log_path, timeout):
         log.write(f"\n===== {util.iso(util.utcnow())} {Path(argv[0]).name}\n")
         log.flush()
         try:
-            return subprocess.run(argv, cwd=workdir, input=stdin_text, stdout=out, stderr=log, text=True,
-                                  encoding="utf-8", errors="replace", timeout=timeout,
-                                  stdin=None if stdin_text is not None else subprocess.DEVNULL).returncode
-        except subprocess.TimeoutExpired:
-            log.write(pick(f"超过 {timeout:g} 秒，已停止\n", f"Ran longer than {timeout:g} s, stopped\n"))
-            return -1
+            rc = util.run_tree(argv, workdir, out, log, timeout, input_text=stdin_text)
         except OSError as e:
             log.write(pick(f"启动失败：{e}\n", f"Could not start: {e}\n"))
             if e.errno == errno.E2BIG or getattr(e, "winerror", None) == 206:   # 206: command line too long
-                log.write(pick("提示词太长，命令行放不下：模板里的 {prompt} 换成 {prompt_file}，或者不写占位符走标准输入\n",
-                               "The prompt is too long for a command line: use {prompt_file} instead of {prompt}, "
-                               "or leave the placeholder out to send it on standard input\n"))
+                hint = pick("提示词太长，命令行放不下：模板里的 {prompt} 换成 {prompt_file}，或者不写占位符走标准输入",
+                            "The prompt is too long for a command line: use {prompt_file} instead of {prompt}, "
+                            "or leave the placeholder out to send it on standard input")
+                log.write(hint + "\n")
+                raise PromptTooLong(hint) from None
             return -1
+        if rc is None:
+            log.write(pick(f"超过 {timeout:g} 秒，已停止\n", f"Ran longer than {timeout:g} s, stopped\n"))
+            return -1
+        return rc
+
+
+class PromptTooLong(YizhanError):
+    """The prompt does not fit on this template's command line. The same letter fails the
+    same way every time, so it waits until the template changes (wake.py)."""
 
 
 def compose(ledger, answer, summary, patch, rc, seconds, name, answer_path):
@@ -244,36 +311,61 @@ def _duration(seconds):
 
 
 def relay_one(ledger, prof, item, out_dir, timeout, run=None):
-    """Run the seat's command for one letter and send the result back. Returns a dict
-    with "returncode" and, when the run succeeded, "reply" (the new letter's id)."""
+    """Run the seat's command for one letter and send the result back. Returns a dict with
+    "returncode" and, when it worked, "reply" (the reply's id); "paused" when the prompt
+    cannot fit this template's command line.
+
+    The work and its delivery are separate steps. A finished run is recorded before
+    anything is sent, so if the reply or the receipt cannot be written, the next try only
+    delivers that recorded result and does not run the task again; the reply's key makes
+    a second send return the first letter. Each run writes files of its own, so an
+    attachment that already went out is never rewritten."""
     seat = prof["address"]
     meta, body = mail.read(item["path"])
+    record_path = out_dir / f"{seat}-{meta['id']}.result.json"
+    try:
+        record = util.read_json(record_path, None)
+    except ValueError:
+        record = None                                 # half written: run it again
+    if not record:
+        record = _attempt(ledger, prof, meta, body, out_dir, timeout, run)
+        if record["returncode"] != 0:
+            return record
+        util.write_json(record_path, record)
+    reply = mail.send(ledger, seat, [meta["from"]], "reply", record["subject"], record["body"],
+                      reply_to=meta["id"], key=f"relay-{meta['id']}", artifacts=record["artifacts"], sealed=True)
+    mail.ack(ledger, seat, meta["id"], "done", pick(f"已处理，见答复 {reply['id']}", f"done, see reply {reply['id']}"))
+    with contextlib.suppress(OSError):
+        record_path.unlink()                          # delivered: nothing left to resume
+    return {"letter": meta["id"], "returncode": 0, "reply": reply["id"]}
+
+
+def _attempt(ledger, prof, meta, body, out_dir, timeout, run):
+    """One run of the seat's command, and the reply it makes, not yet sent."""
+    seat = prof["address"]
     workdir = prof.get("workdir") or (prof.get("paths") or [str(Path.home())])[0]
-    stem = f"{seat}-{meta['id']}"
+    stem = f"{seat}-{meta['id']}-{util.utcnow():%Y%m%dT%H%M%S%fZ}"   # this run's own files
     text = prompt(ledger, prof, thread(ledger, meta, body))
     argv, stdin_text = build_argv(absolute(prof["command"]), text, out_dir / f"{stem}.prompt.md")
     out_path, log_path = out_dir / f"{stem}.out.md", out_dir / f"{seat}.log"
     before = snapshot(workdir, out_dir / f"{stem}.index")
     started = time.monotonic()
-    rc = (run or run_cli)(argv, workdir, stdin_text, out_path, log_path, timeout)
+    try:
+        rc = (run or run_cli)(argv, workdir, stdin_text, out_path, log_path, timeout)
+    except PromptTooLong:
+        return {"letter": meta["id"], "returncode": -1, "paused": prof["command"]}
     seconds = time.monotonic() - started
-    after = snapshot(workdir, out_dir / f"{stem}.index")
-    result = {"letter": meta["id"], "returncode": rc}
     if rc != 0:
-        return result
+        return {"letter": meta["id"], "returncode": rc}
+    after = snapshot(workdir, out_dir / f"{stem}.index")
     try:
         answer = out_path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         answer = ""
     summary, patch = changes(before, after, out_dir / f"{stem}.patch")
-    name = Path(argv[0]).name
-    subject = meta.get("subject", "")
-    prefix = pick("答复：", "Re: ")
-    reply = mail.send(ledger, seat, [meta["from"]], "reply",
-                      subject if subject.startswith(prefix) else prefix + subject,
-                      compose(ledger, answer, summary, patch, rc, seconds, name, out_path),
-                      reply_to=meta["id"], artifacts=[p for p in (patch,) if p], sealed=True)
-    mail.ack(ledger, seat, meta["id"], "done", pick(f"已处理，见答复 {reply['id']}", f"done, see reply {reply['id']}"))
-    result["reply"] = reply["id"]
-    return result
+    subject, prefix = meta.get("subject", ""), pick("答复：", "Re: ")
+    return {"letter": meta["id"], "returncode": 0,
+            "subject": subject if subject.startswith(prefix) else prefix + subject,
+            "body": compose(ledger, answer, summary, patch, rc, seconds, Path(argv[0]).name, out_path),
+            "artifacts": [str(patch)] if patch else []}
 

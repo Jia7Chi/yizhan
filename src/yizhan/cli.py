@@ -345,14 +345,28 @@ def cmd_autowake(ns):
             st = state.load(led, f"seat-{s['address']}")
             used = int(st.get("wakes", {}).get(today, 0))
             budget = int(s.get("wake_budget_per_day") or led.settings["wake_budget_per_day"])
-            job = (pick("后台任务在跑", "the background job is running") if service.installed(_service_plan(led, s))
-                   else pick("后台任务没在跑，别的机器来的信要等有人开会话",
-                             "the background job is not running, so letters from other machines wait until "
-                             "someone opens a session"))
+            if service.installed(_service_plan(led, s)):
+                job = pick("后台任务在跑", "the background job is running")
+            elif s.get("autowake_service") is False:
+                job = pick("按你的选择没装后台任务，只等本机来信", "no background job, as chosen; only letters from this machine wake it")
+            else:
+                job = pick("后台任务没在跑，别的机器来的信要等有人开会话",
+                           "the background job is not running, so letters from other machines wait until "
+                           "someone opens a session")
             last = (pick(f"上次叫醒 {led.fmt_time(st['last_wake_at'])}", f"last woken {led.fmt_time(st['last_wake_at'])}")
                     if st.get("last_wake_at") else pick("还没叫醒过", "not woken yet"))
             print(pick(f"- {s['address']}：自动叫醒开着；今天叫醒 {used}/{budget} 次；{job}；{last}",
                        f"- {s['address']}: autowake is on; woken {used}/{budget} times today; {job}; {last}"))
+            paused = [k for k, v in (st.get("paused") or {}).items() if v == s.get("command")]
+            if paused:
+                still_open = {it["meta"]["id"] for it in mail.inbox(led, s["address"])}
+                paused = [k for k in paused if k in still_open]
+            if paused:
+                print(pick(f"  {len(paused)} 封信的提示词放不进命令行，先暂停了：模板里的 {{prompt}} 换成 {{prompt_file}}，"
+                           "或者不写占位符走标准输入，改好以后会自动再试",
+                           f"  {len(paused)} letter(s) paused: the prompt does not fit this template's command line. "
+                           "Use {prompt_file} instead of {prompt}, or no placeholder for standard input; they are "
+                           "tried again once the template changes"))
             if st.get("last_wake_rc"):
                 print(pick(f"  上次叫醒失败（返回码 {st['last_wake_rc']}），信已放回待办，下次再试：{st.get('last_wake_error', '')}",
                            f"  The last wake failed (exit code {st['last_wake_rc']}); its letters are back in the "
@@ -363,7 +377,7 @@ def cmd_autowake(ns):
     prof = led.require_seat(seat, local=True)
     if ns.action == "off":
         service.uninstall(_service_plan(led, prof))
-        led.update_seat(seat, autowake=None, autowake_interval=None, wake="queue")
+        led.update_seat(seat, autowake=None, autowake_interval=None, autowake_service=None, wake="queue")
         print(pick(f"已关掉 {seat} 的自动叫醒，后台任务也删了。之后它的信只排队，等你开会话。",
                    f"Turned off autowake for {seat} and removed its background job. From now on its letters "
                    "wait until you open a session."))
@@ -469,8 +483,11 @@ def _explain_autowake(seat, prof, name, ns, budget, rounds):
 
 
 def _enable_autowake(led, seat, ns, p, budget, exe):
+    # autowake_service=False records that no job was wanted (--no-service), so status and
+    # doctor need not report a missing one; the key is absent when a job is expected.
     led.update_seat(seat, wake="exec", autowake=True, wake_budget_per_day=budget, command=exe,
-                    autowake_interval=None if p is None else int(ns.interval))
+                    autowake_interval=None if p is None else int(ns.interval),
+                    autowake_service=False if p is None else None)
     if p is not None:
         try:
             service.install(p)
@@ -536,11 +553,19 @@ def cmd_doctor(ns):
             say(good, pick(f"{s['address']} 叫醒用的命令 {exe}：{text}", f"{s['address']} wakes with {exe}: {text}"))
         if s.get("autowake"):
             running = service.installed(_service_plan(led, s))
-            say(running, pick(f"{s['address']} 开着自动叫醒；后台任务", f"{s['address']} has autowake on; the background job ") + (
-                pick("在跑", "is running") if running
-                else pick(f"没在跑，别的机器来的信要等有人开会话（yizhan autowake on --as {s['address']} 重装）",
-                          "is not running, so letters from other machines wait until someone opens a session "
-                          f"(reinstall it with yizhan autowake on --as {s['address']})")))
+            if not running and s.get("autowake_service") is False:
+                # Turned on with --no-service: no job was wanted, so there is nothing to fix.
+                say(True, pick(f"{s['address']} 开着自动叫醒，打开时选了不装后台任务：本机来的信照样立刻叫醒，"
+                               "别的机器来的信要等有人开会话",
+                               f"{s['address']} has autowake on without a background job, as chosen: letters "
+                               "from this machine still wake it at once; letters from other machines wait until "
+                               "someone opens a session"))
+            else:
+                say(running, pick(f"{s['address']} 开着自动叫醒；后台任务", f"{s['address']} has autowake on; the background job ") + (
+                    pick("在跑", "is running") if running
+                    else pick(f"没在跑，别的机器来的信要等有人开会话（yizhan autowake on --as {s['address']} 重装）",
+                              "is not running, so letters from other machines wait until someone opens a session "
+                              f"(reinstall it with yizhan autowake on --as {s['address']})")))
             workdir = s.get("workdir") or (s.get("paths") or [""])[0]
             if s["agent"] == "cli":
                 say(bool(workdir) and Path(workdir).is_dir(),
