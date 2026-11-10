@@ -204,14 +204,47 @@ class WakeRetries(WakeSandbox):
 
     def test_runner_timeout_and_launch_error_are_retryable_failures(self):
         self.letter(sealed=True)
-        for error in (subprocess.TimeoutExpired("fake-codex", 1), OSError("not installed")):
-            with self.subTest(error=type(error).__name__), \
-                    mock.patch.object(wake.subprocess, "run", side_effect=error):
+        for failure, outcome in (("timeout", None), ("launch_error", OSError("not installed"))):
+            with self.subTest(failure=failure), \
+                    mock.patch.object(wake.util, "run_tree", side_effect=[outcome]) as run:
                 result = self.check(None)
+                run.assert_called_once()
                 self.assertEqual(result["returncode"], -1)
                 self.assertEqual(state.load(self.led, f"seat-{self.reader}")["woken"], [])
         error = state.load(self.led, f"seat-{self.reader}")["last_wake_error"]
         self.assertIn("not installed", error)
+
+    def test_unwritable_log_still_allows_failed_run_to_retry(self):
+        first = self.letter(sealed=True)
+        log = self.led.state_dir / "wake" / f"{self.reader}.log"
+        log.mkdir(parents=True)
+        with mock.patch.object(util, "run_tree") as process:
+            result = self.check(None)
+        process.assert_not_called()
+        self.assertEqual(result["returncode"], -1)
+        self.assertNotIn(first["id"], state.load(self.led, f"seat-{self.reader}")["woken"])
+        log.rmdir()
+        retry = mock.Mock(return_value=0)
+        self.assertEqual(self.check(retry)["returncode"], 0)
+        retry.assert_called_once()
+
+    def test_completed_run_seals_its_letters_and_wakes_their_reader(self):
+        self.letter(sealed=True)
+        self.led.update_seat(self.sender, autowake=True)
+        sent = []
+
+        def runner(*args):
+            sent.append(mail.send(self.led, self.reader, [self.sender],
+                                  "request", "继续处理", "下一项工作"))
+            return 0
+
+        with mock.patch.object(wake, "spawn_detached") as spawn:
+            result = self.check(runner)
+        self.assertEqual(result["returncode"], 0)
+        self.assertTrue(mail.is_sealed(self.led, sent[0]))
+        self.assertEqual(result["kicked"], [self.sender])
+        spawn.assert_called_once()
+        self.assertEqual(spawn.call_args.args[0][-3:], ["wake", "--as", self.sender])
 
 
 class DetachedProcessAndLocks(Sandbox):

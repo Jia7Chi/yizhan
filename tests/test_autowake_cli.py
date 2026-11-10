@@ -120,8 +120,19 @@ class AutowakeCLI(Sandbox):
         code, output = self.enable("--yes", "--no-service")
         self.assertEqual(code, 0, output)
         self.assertTrue(self.led.seat(self.seat)["autowake"])
+        self.assertIs(self.led.seat(self.seat)["autowake_service"], False)
         self.install.assert_not_called()
         self.assertIn("不装后台任务", output)
+        self.installed.return_value = False
+        code, output = self.run_cli("autowake", "status")
+        self.assertEqual(code, 0, output)
+        self.assertIn("按你的选择没装后台任务", output)
+        self.assertNotIn("后台任务没在跑", output)
+        with mock.patch.object(adapters, "hooks_installed", return_value=True), \
+                mock.patch.object(adapters, "memory_collisions", return_value={}):
+            _, output = self.run_cli("doctor")
+        self.assertIn("打开时选了不装后台任务", output)
+        self.assertNotIn("没在跑", output)
 
     def test_install_failure_reports_event_only_fallback(self):
         self.install.side_effect = util.YizhanError("test service failure")
