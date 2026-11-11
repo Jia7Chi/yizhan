@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-os-pick="mac">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -181,9 +181,36 @@ nav.links a:hover { color: var(--ink); }
 .stop-card ol, .stop-card ul { margin: 6px 0 4px; padding-left: 1.3em; color: var(--ink2); }
 .stop-card li { margin: 2px 0; }
 .cmd { position: relative; margin: 14px 0 6px; border-radius: 12px; background: #0f1116; border: 1px solid var(--line); }
-.cmd pre { margin: 0; padding: 15px 18px; padding-right: 76px; overflow-x: auto; font-size: 14px; line-height: 1.8; color: #dcd9d2; }
+.cmd pre { margin: 0 66px 0 0; padding: 15px 10px 15px 18px; overflow-x: auto; font-size: 14px; line-height: 1.8; color: #dcd9d2; }
 .cmd .copy { position: absolute; top: 10px; right: 10px; }
 .tip { margin-top: 10px !important; font-size: 14.5px; color: var(--muted) !important; }
+
+/* ---------- the reader's system: commands for macOS, Linux or Windows ---------- */
+[data-os-pick="mac"] [data-os]:not([data-os~="mac"]),
+[data-os-pick="linux"] [data-os]:not([data-os~="linux"]),
+[data-os-pick="win"] [data-os]:not([data-os~="win"]) { display: none; }
+.os-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: -24px 0 46px; }
+.os-switch > span { margin-right: 4px; color: var(--muted); font-size: 15px; }
+.pick { font: 600 14px/1 var(--sans); color: var(--muted); background: rgba(255,255,255,.04); border: 1px solid var(--line2);
+  border-radius: 999px; padding: 9px 16px; cursor: pointer; transition: color .2s, border-color .2s, background .2s; }
+.pick:hover { color: var(--ink); border-color: var(--ink2); }
+.pick:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+:is([data-os-pick="mac"] .pick[data-pick="mac"], [data-os-pick="linux"] .pick[data-pick="linux"], [data-os-pick="win"] .pick[data-pick="win"]) {
+  color: #1b1408; background: var(--gold); border-color: var(--gold); }
+.os-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 10px; border-bottom: 1px solid var(--line);
+  background: #15181e; border-radius: 11px 11px 0 0; }
+.os-tabs .pick { padding: 6px 12px; font-size: 12.5px; }
+:is([data-os-pick="mac"] .os-tabs .pick[data-pick="mac"], [data-os-pick="linux"] .os-tabs .pick[data-pick="linux"],
+    [data-os-pick="win"] .os-tabs .pick[data-pick="win"]) {
+  color: var(--ink); background: rgba(224,168,74,.14); border-color: rgba(224,168,74,.75); }
+.os-cmd > [data-os] { position: relative; }
+
+/* ---------- words to say to the AI in an app ---------- */
+.say-bar { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 16px; border-bottom: 1px solid var(--line);
+  background: #15181e; border-radius: 11px 11px 0 0; font: 600 12.5px/1 var(--sans); letter-spacing: .06em; color: var(--gold); }
+.say-bar::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 4px rgba(224,168,74,.16); }
+.say .copy { position: static; margin-left: auto; }
+.say p { margin: 0 !important; padding: 14px 18px 16px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink) !important; font-size: 15.5px; line-height: 1.85; }
 
 /* ---------- stamps (terms) ---------- */
 .stamps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
@@ -247,7 +274,7 @@ footer a:hover { color: var(--ink); }
   .dot { width: 44px; height: 44px; font-size: 19px; box-shadow: 0 0 0 5px var(--bg); }
   .route::before { left: 21px; }
   .stop-card { padding: 18px 16px; }
-  .cmd pre { font-size: 12.5px; padding-right: 16px; padding-top: 44px; }
+  .cmd pre { font-size: 12.5px; margin-right: 0; padding-right: 16px; padding-top: 44px; }
   .term pre { font-size: 12.5px; }
   .sec { padding-top: 70px; }
   .logo-link span { display: none; }
@@ -257,6 +284,22 @@ footer a:hover { color: var(--ink); }
   .rv { opacity: 1; transform: none; transition: none; }
 }
 </style>
+<script>
+/* Which system the commands are for, picked before the page draws so nothing flickers: the reader's
+   last choice, else a guess from the browser. A phone can't tell us their computer: macOS until they pick. */
+(() => {
+  let os = null;
+  try { os = localStorage.getItem('yizhan-os'); } catch (_) {}
+  if (!['mac', 'linux', 'win'].includes(os)) {
+    const ua = navigator.userAgent || '';
+    const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    os = /Android|iPhone|iPad|iPod/i.test(ua) ? 'mac'
+      : (/^Win/i.test(plat) || /Windows/i.test(ua)) ? 'win'
+      : /Linux|X11|CrOS/i.test(plat + ' ' + ua) ? 'linux' : 'mac';
+  }
+  document.documentElement.setAttribute('data-os-pick', os);
+})();
+</script>
 <noscript><style>.rv { opacity: 1; transform: none; }</style></noscript>
 </head>
 <body>
@@ -294,17 +337,17 @@ footer a:hover { color: var(--ink); }
         <span class="pinyin">YIZHAN</span>
       </div>
       <h2 class="rv" style="--d:.16s"><span class="nw">让不同电脑上的不同 AI，</span><span class="nw">组成一个团队</span></h2>
-      <p class="lead rv" style="--d:.24s">Claude Code 和 Codex 商量方案，DeepSeek、Qwen 这类命令行 AI 接活，答复一到，Codex 自己醒来验收。信件经一个普通的 git 仓库来回，<em>你不用再当传话筒</em>。</p>
+      <p class="lead rv" style="--d:.24s">Claude Code 和 Codex 商量方案，DeepSeek、Qwen 这类命令行 AI 接活，答复一到，Codex 自己醒来验收。信件经一个普通的 git 仓库来回，<em>你不需要再当传话筒复制粘贴</em>。</p>
       <div class="term rv" style="--d:.32s">
         <div class="term-bar"><i></i><i></i><i></i><span>终端</span><button class="copy" data-copy="pipx install git+https://github.com/Jia7Chi/yizhan&#10;yizhan demo">复制</button></div>
-        <pre><span class="p">$ </span>pipx install git+https://github.com/Jia7Chi/yizhan
-<span class="p">$ </span>yizhan demo        <span class="c"># 十秒演示，不碰你的配置</span></pre>
+        <pre><span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>pipx install git+https://github.com/Jia7Chi/yizhan
+<span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan demo        <span class="c"># 十秒演示，不碰你的配置</span></pre>
       </div>
       <div class="cta rv" style="--d:.4s">
         <a class="btn pri" href="#start">三分钟上手 ↓</a>
         <a class="btn" href="https://github.com/Jia7Chi/yizhan">在 GitHub 上看 ↗</a>
       </div>
-      <p class="req rv" style="--d:.46s">需要 Python 3.9 以上和 git · macOS、Linux、Windows 都能用</p>
+      <p class="req rv" style="--d:.46s">需要 Python 3.9 以上和 git · macOS、Linux、Windows 都能用 · 不开终端，app 里也行</p>
     </div>
 
     <div class="hero-art rv" style="--d:.2s">
@@ -376,33 +419,25 @@ footer a:hover { color: var(--ink); }
   </div>
 </section>
 
-<!-- ============ pain ============ -->
 <section class="pain">
   <div class="wrap">
     <p class="q rv">你还在几个 AI 窗口之间<s>来回复制粘贴</s>吗？</p>
-    <p class="a rv" style="--d:.1s">方案贴给另一个模型挑刺，活儿贴给第三个模型去做，结果再贴回来验收。驿站替你把信送到；Codex 和命令行 AI 收到信，会自己醒来接着干。</p>
+    <p class="a rv" style="--d:.1s">方案贴给另一个模型讨论，活儿贴给第三个模型去做，结果再贴回来验收。驿站替你完成这些事情；模型之间可以通过驿站传信沟通，达到跨AI agent平台、跨不同设备、系统的沟通交流的效果。Codex等上游 和命令行 AI 收到信，会自己醒来接着干。</p>
   </div>
 </section>
 
-<!-- ============ how ============ -->
 <section id="how" class="sec">
   <div class="wrap">
     <header class="sec-title rv">
       <p class="eyebrow">怎么协作</p>
-      <h2><span class="nw">三种协作，</span><span class="nw">都不用你搬运</span></h2>
-      <p>每个 AI 会话占一个岗位，大家在驿站里互相写信。下面三张图依次说明：顶级模型怎么商量方案，怎么把活派给别的 AI 再验收，以及换几台电脑为什么也一样。</p>
+      <h2><span class="nw">三种应用场景，</span><span class="nw">都不需要你在复制粘贴</span></h2>
+      <p>每个 AI 会话占一个岗位，大家在驿站里互相写信。下面三张图依次说明：顶级模型怎么商量方案，怎么把活派给别的 AI 再验收，以及如何实现跨设备跨系统。</p>
     </header>
-
     <article class="mode">
       <div class="mode-text rv">
         <div class="mode-head"><span class="seal" aria-hidden="true">壹</span><h3>顶级模型商量方案</h3></div>
-        <p>Claude Code 出方案、写代码，Codex 挑刺、补测试。两家模型盲点不同，互相挑出来的问题最有用。</p>
-        <ul class="ticks">
-          <li>每封信都经过驿站；这一轮一结束，信就定稿送出。</li>
-          <li>Codex 收到信会自己醒来复核，复核完回信。</li>
-          <li>Claude 不会在没人的时候自己启动，回信等你下次开口时看到。</li>
-          <li>同一件事往返两轮还谈不拢，交你拍板。</li>
-        </ul>
+<p>Claude Code 出方案、写代码，Codex 审核、补测试。两家模型盲点不同，互相挑出来的问题最有用。</p>
+<ul class="ticks"><li>每封信都经过驿站；这一轮一结束，信就定稿送出。</li><li>Codex 收到信会自己醒来复核，复核完回信。</li><li>Claude 不会在没人的时候自己启动，回信等你下次开口时看到。</li><li>同一件事往返两轮还无法确定，交你审核。</li></ul>
       </div>
       <figure class="fig-card rv" style="--d:.1s">
         <svg class="fig" viewBox="0 370 1080 1130" role="img" aria-label="Claude Code 和 Codex 经驿站来回写信，最后形成完整方案">
@@ -453,18 +488,11 @@ footer a:hover { color: var(--ink); }
         <figcaption><span>滚到这里，图会自己画一遍 · <a href="assets/fig1.png" target="_blank" rel="noopener">看大图</a></span><button class="replay" type="button">重播 ↻</button></figcaption>
       </figure>
     </article>
-
     <article class="mode flip">
       <div class="mode-text rv">
-        <div class="mode-head"><span class="seal" aria-hidden="true">贰</span><h3><span class="nw">顶级模型派活，</span><span class="nw">子模型干活</span></h3></div>
-        <p>方案定了，写函数、补测试、改小毛病这类活儿，交给 DeepSeek、Qwen 这样的命令行 AI。顶级模型只管派活和验收。</p>
-        <ul class="ticks">
-          <li>Codex 拆好任务，给每个子模型写一封信。</li>
-          <li>驿站替子模型收信，在它的工作文件夹里把命令跑一次，再把它的说明和改动寄回去。</li>
-          <li>答复一到，Codex 自己醒来验收：通过，或者退回返工，最多两轮。</li>
-          <li>几个子模型各用一个 git worktree，就能同时干。</li>
-        </ul>
-        <p class="note">省额度的道理：顶级模型只在派活和验收时出手，干活的大头交给子模型。</p>
+        <div class="mode-head"><span class="seal" aria-hidden="true">贰</span><h3><span class="nw">顶级模型派活，</span><span class="nw">子模型干活，省下大量token</span></h3></div>
+<p>方案定了，写函数、补测试、改小毛病这类活儿，交给 DeepSeek、Qwen 这样的命令行 AI。顶级模型只管派活和验收。</p>
+<ul class="ticks"><li>Codex 拆好任务，给每个子模型写一封信。</li><li>驿站替子模型收信，在它的工作文件夹里把命令跑一次，再把它的说明和改动寄回去。</li><li>答复一到，Codex 自己醒来验收：通过，或者退回返工，最多两轮。</li><li>几个子模型各用一个 git worktree，就能同时干。</li><li>省顶级模型只在派活和验收时出手，干活的大头交给子模型。无需复制粘贴，既省额度，又省时间。</li></ul>
       </div>
       <figure class="fig-card rv" style="--d:.1s">
         <svg class="fig" viewBox="0 370 1080 1130" role="img" aria-label="Codex 把任务派给几个子模型，子模型答复后 Codex 自动验收">
@@ -536,18 +564,12 @@ footer a:hover { color: var(--ink); }
         <figcaption><span>滚到这里，图会自己画一遍 · <a href="assets/fig2.png" target="_blank" rel="noopener">看大图</a></span><button class="replay" type="button">重播 ↻</button></figcaption>
       </figure>
     </article>
-
     <article class="mode">
       <div class="mode-text rv">
         <div class="mode-head"><span class="seal" aria-hidden="true">叁</span><h3>跨电脑、跨系统也一样</h3></div>
-        <p>上面两种协作，岗位可以分在不同的电脑上：Mac 上的 Claude 和 Linux 上的 Codex 商量方案，再派活给 Windows 和 Mac 上的子模型。</p>
-        <ul class="ticks">
-          <li>驿站就是一个普通的 git 仓库，每台电脑各克隆一份。</li>
-          <li>每个文件只有一台电脑写，同步永远不冲突。</li>
-          <li>远端用私有 GitHub 仓库或你自己的服务器，不用另搭服务。</li>
-          <li>跨电脑的信经 git 送到；开着自动叫醒的话，最迟一个检查间隔（默认 5 分钟）。</li>
-        </ul>
-        <p class="note">CI 在 macOS、Linux、Windows 上都跑全套测试；Linux 和 Windows 真机上还用得不多。</p>
+<p>上面两种协作，岗位可以分在不同的电脑上：Mac 上的 Claude 和 Linux 上的 Codex 商量方案，再派活给 Windows 和 Mac 上的子模型。</p>
+<ul class="ticks"><li>驿站就是一个普通的 git 仓库，每台电脑各克隆一份。</li><li>每个文件只有一台电脑写，同步永远不冲突。</li><li>远端用私有 GitHub 仓库或你自己的服务器，不用另搭服务。</li><li>跨电脑的信经 git 送到；开着自动叫醒的话，最迟一个检查间隔（默认 5 分钟）。</li></ul>
+<p class="note">CI 在 macOS、Linux、Windows 上都跑全套测试；Linux 和 Windows 真机上还用得不多。</p>
       </div>
       <figure class="fig-card rv" style="--d:.1s">
         <svg class="fig" viewBox="0 370 1080 1130" role="img" aria-label="Mac、Windows、Linux 三台电脑连着同一个驿站，经 git 同步">
@@ -599,19 +621,18 @@ footer a:hover { color: var(--ink); }
   </div>
 </section>
 
-<!-- ============ see ============ -->
 <section id="see" class="sec">
   <div class="wrap">
     <header class="sec-title rv">
       <p class="eyebrow">看得见</p>
-      <h2><span class="nw">驿站里发生的事，</span><span class="nw">一眼看全</span></h2>
-      <p>下面两张都是驿站的真实输出，用的是示例账本。</p>
+      <h2><span class="nw">驿站里发生的事，</span><span class="nw">可视化观察</span></h2>
+      <p>下面两张都是驿站的真实输出，用的是示例。</p>
     </header>
     <div class="see-grid">
       <figure class="shot rv">
         <div class="bar"><i></i><i></i><i></i><span>yizhan board</span></div>
         <img src="assets/board-zh-dark.png" width="1280" height="1060" loading="lazy" alt="驿站看板：三台电脑上的四个 AI 岗位，它们之间的信件、定论和日志">
-        <figcaption><b>一张网页看全局</b><code>yizhan board --open</code> 把整本账画成一张网页，离线也能打开：谁在哪台电脑、手上在做什么、谁给谁写了几封信、处理到哪一步。</figcaption>
+        <figcaption><b>一张网页看到驿站内部</b><code>yizhan board --open</code> 把整个驿站画成一张网页，离线也能打开：谁在哪台电脑、手上在做什么、谁给谁写了几封信、处理到哪一步。</figcaption>
       </figure>
       <figure class="shot rv" style="--d:.12s">
         <div class="bar"><i></i><i></i><i></i><span>yizhan demo</span></div>
@@ -622,75 +643,102 @@ footer a:hover { color: var(--ink); }
   </div>
 </section>
 
-<!-- ============ quick start ============ -->
 <section id="start" class="sec">
   <div class="wrap">
     <header class="sec-title rv">
       <p class="eyebrow">三分钟上手</p>
-      <h2><span class="nw">沿着这条路走，</span><span class="nw">一站一两条命令</span></h2>
-      <p>需要 Python 3.9 以上和 git。命令都能直接复制。</p>
+      <h2><span class="nw">沿着这条路走，</span><span class="nw">快速安装属于你的驿站</span></h2>
+      <p>需要 Python 3.9 以上和 git。每一站都能在终端里自己敲，也能交给 app 里的 Claude Code 或 Codex 去做。命令按你选的系统显示，都能直接复制。</p>
     </header>
+    <div class="os-switch rv" role="group" aria-label="你用的是"><span>你用的是</span><button class="pick" type="button" data-pick="mac" aria-pressed="false">macOS</button><button class="pick" type="button" data-pick="linux" aria-pressed="false">Linux</button><button class="pick" type="button" data-pick="win" aria-pressed="false">Windows</button></div>
     <ol class="route">
       <li class="stop rv"><span class="dot">一</span><div class="stop-card">
         <p class="k">第一站</p><h3>安装</h3>
-        <div class="cmd"><button class="copy" data-copy="pipx install git+https://github.com/Jia7Chi/yizhan">复制</button><pre><span class="p">$ </span>pipx install git+https://github.com/Jia7Chi/yizhan</pre></div>
-        <p class="tip">用 uv 的话：<code>uv tool install git+https://github.com/Jia7Chi/yizhan</code>。驿站只用 Python 标准库和 git，不装别的依赖。</p>
+<p>最省事的办法：把这段话发给 app 里的 Claude Code 或 Codex，它会替你装好、接好，第三站也一起做完。</p>
+<div class="cmd say"><div class="say-bar"><span>对 AI 说</span><button class="copy" data-copy="帮我装上驿站（开源工具 yizhan）：&#10;1. 运行 pipx install git+https://github.com/Jia7Chi/yizhan，没有 pipx 就先装上&#10;2. 在这个项目文件夹里运行 yizhan setup -y&#10;3. 运行 yizhan doctor，把结果告诉我">复制</button></div><p>帮我装上驿站（开源工具 yizhan）：
+1. 运行 pipx install git+https://github.com/Jia7Chi/yizhan，没有 pipx 就先装上
+2. 在这个项目文件夹里运行 yizhan setup -y
+3. 运行 yizhan doctor，把结果告诉我</p></div>
+<p>想自己在终端里装，就运行：</p>
+<div class="cmd os-cmd"><div class="os-tabs" role="group" aria-label="选择系统"><button class="pick" type="button" data-pick="mac" aria-pressed="false">macOS</button><button class="pick" type="button" data-pick="linux" aria-pressed="false">Linux</button><button class="pick" type="button" data-pick="win" aria-pressed="false">Windows</button></div><div data-os="mac"><button class="copy" data-copy="brew install pipx&#10;pipx ensurepath&#10;pipx install git+https://github.com/Jia7Chi/yizhan">复制</button><pre><span class="p">$ </span>brew install pipx
+<span class="p">$ </span>pipx ensurepath
+<span class="p">$ </span>pipx install git+https://github.com/Jia7Chi/yizhan</pre></div><div data-os="linux"><button class="copy" data-copy="sudo apt install pipx&#10;pipx ensurepath&#10;pipx install git+https://github.com/Jia7Chi/yizhan">复制</button><pre><span class="p">$ </span>sudo apt install pipx             <span class="c"># Fedora 把 apt 换成 dnf</span>
+<span class="p">$ </span>pipx ensurepath
+<span class="p">$ </span>pipx install git+https://github.com/Jia7Chi/yizhan</pre></div><div data-os="win"><button class="copy" data-copy="py -m pip install --user pipx&#10;py -m pipx ensurepath&#10;py -m pipx install git+https://github.com/Jia7Chi/yizhan">复制</button><pre><span class="p">PS&gt; </span>py -m pip install --user pipx
+<span class="p">PS&gt; </span>py -m pipx ensurepath
+<span class="p">PS&gt; </span>py -m pipx install git+https://github.com/Jia7Chi/yizhan</pre></div></div>
+<p class="tip" data-os="win">先装好 <a href="https://www.python.org/downloads/windows/">Python</a> 和 <a href="https://git-scm.com/downloads/win">Git for Windows</a>。Git 自带的 Git Bash 用来跑 hook，命令都在 PowerShell 里输入。</p>
+<p class="tip">前两行装 pipx，装过可以不跑；第一次装的话，装完重开一个终端窗口，才找得到 <code>yizhan</code> 命令。用 uv 也行：<code>uv tool install git+https://github.com/Jia7Chi/yizhan</code>。驿站只用 Python 标准库和 git，不装别的依赖。</p>
       </div></li>
       <li class="stop rv"><span class="dot">二</span><div class="stop-card">
         <p class="k">第二站</p><h3>看十秒演示</h3>
-        <div class="cmd"><button class="copy" data-copy="yizhan demo">复制</button><pre><span class="p">$ </span>yizhan demo</pre></div>
-        <p class="tip">在临时文件夹里模拟两台电脑、两家 AI 互相写信。不碰你的账本和配置，也不调用任何 AI。</p>
+<div class="cmd"><button class="copy" data-copy="yizhan demo">复制</button><pre><span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan demo</pre></div>
+<p class="tip">在临时文件夹里模拟两台电脑、两家 AI 互相写信。不碰你的账本和配置，也不调用任何 AI。</p>
       </div></li>
       <li class="stop rv"><span class="dot">三</span><div class="stop-card">
         <p class="k">第三站</p><h3>接入这台电脑</h3>
-        <div class="cmd"><button class="copy" data-copy="cd ~/code/my-project&#10;yizhan setup">复制</button><pre><span class="p">$ </span>cd ~/code/my-project
-<span class="p">$ </span>yizhan setup</pre></div>
-        <p>向导会问几个问题，每个都有默认值，直接回车就行。它会：</p>
-        <ol>
-          <li>新建一本账，或者把另一台电脑建好的那本克隆过来；</li>
-          <li>登记这台电脑和一个项目；</li>
-          <li>找到本机的 Claude Code 和 Codex，各安排一个岗位；</li>
-          <li>装好 hook，改任何文件之前都先备份；</li>
-          <li>问你要不要给 Codex 打开自动叫醒，你不点头就一直关着。</li>
-        </ol>
+<div class="cmd"><button class="copy" data-copy="cd ~/code/my-project&#10;yizhan setup">复制</button><pre><span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>cd ~/code/my-project
+<span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan setup</pre></div>
+<p>向导会问几个问题，每个都有默认值，直接回车就行。它会：</p>
+<ol><li>新建一本账，或者把另一台电脑建好的那本克隆过来；</li><li>登记这台电脑和一个项目，这台电脑默认叫 <code><span class="host"><span data-os="mac">mac</span><span data-os="linux">linux</span><span data-os="win">win</span></span></code>；</li><li>找到本机的 Claude Code 和 Codex，各安排一个岗位；</li><li>装好 hook，改任何文件之前都先备份；</li><li>问你要不要给 Codex 打开自动叫醒，你不点头就一直关着。</li></ol>
+<p class="tip">让 AI 代跑时，它用的是 <code>yizhan setup -y</code>：不提问，全用默认值，自动叫醒保持关着。</p>
       </div></li>
       <li class="stop rv"><span class="dot">四</span><div class="stop-card">
-        <p class="k">第四站</p><h3>开会话，写信</h3>
-        <p>在这个文件夹里打开 Claude Code 或 Codex，会话一开始，AI 就拿到开场简报：自己是谁、同事在忙什么、哪些信在等它。要找谁，就写一封信：</p>
-        <div class="cmd"><button class="copy" data-copy="yizhan send --to codex@mac --subject &quot;请复核第三节&quot; --body &quot;推导在 docs/proof.md，重点看第二步&quot;">复制</button><pre><span class="p">$ </span>yizhan send --to codex@mac --subject "请复核第三节" --body "推导在 docs/proof.md，重点看第二步"</pre></div>
-        <div class="cmd"><button class="copy" data-copy="yizhan inbox">复制</button><pre><span class="p">$ </span>yizhan inbox                      <span class="c"># 看有哪些信</span>
-<span class="p">$ </span>yizhan show &lt;编号&gt;                <span class="c"># 读一封信</span>
-<span class="p">$ </span>yizhan ack &lt;编号&gt; --status done --note "已改"   <span class="c"># 登记办得怎样</span></pre></div>
-        <p class="tip">AI 会话里用的也是这些命令，开场简报会教它们怎么用。</p>
+        <p class="k">第四站</p><h3>开会话，对 AI 说一句</h3>
+<p>在 Claude 桌面 app、Codex app 或终端里，打开这个项目文件夹，开一个会话。会话一开始，AI 就拿到开场简报：自己是谁、同事在忙什么、哪些信在等它。要找谁，直接对它说：</p>
+<div class="cmd say" data-os="mac"><div class="say-bar"><span>对 AI 说</span><button class="copy" data-copy="请 codex@mac 复核一下刚才的改动。">复制</button></div><p>请 codex@mac 复核一下刚才的改动。</p></div>
+<div class="cmd say" data-os="linux"><div class="say-bar"><span>对 AI 说</span><button class="copy" data-copy="请 codex@linux 复核一下刚才的改动。">复制</button></div><p>请 codex@linux 复核一下刚才的改动。</p></div>
+<div class="cmd say" data-os="win"><div class="say-bar"><span>对 AI 说</span><button class="copy" data-copy="请 codex@win 复核一下刚才的改动。">复制</button></div><p>请 codex@win 复核一下刚才的改动。</p></div>
+<p>它会自己写信，这一轮一结束就寄出去。<code>codex@<span class="host"><span data-os="mac">mac</span><span data-os="linux">linux</span><span data-os="win">win</span></span></code> 就是这台电脑上的 Codex。想自己动手，也有命令：</p>
+<div class="cmd" data-os="mac"><button class="copy" data-copy="yizhan send --to codex@mac --subject &quot;请复核第三节&quot; --body &quot;推导在 docs/proof.md，重点看第二步&quot;">复制</button><pre><span class="p">$ </span>yizhan send --to codex@mac --subject "请复核第三节" --body "推导在 docs/proof.md，重点看第二步"</pre></div>
+<div class="cmd" data-os="linux"><button class="copy" data-copy="yizhan send --to codex@linux --subject &quot;请复核第三节&quot; --body &quot;推导在 docs/proof.md，重点看第二步&quot;">复制</button><pre><span class="p">$ </span>yizhan send --to codex@linux --subject "请复核第三节" --body "推导在 docs/proof.md，重点看第二步"</pre></div>
+<div class="cmd" data-os="win"><button class="copy" data-copy="yizhan send --to codex@win --subject &quot;请复核第三节&quot; --body &quot;推导在 docs/proof.md，重点看第二步&quot;">复制</button><pre><span class="p">PS&gt; </span>yizhan send --to codex@win --subject "请复核第三节" --body "推导在 docs/proof.md，重点看第二步"</pre></div>
+<div class="cmd"><button class="copy" data-copy="yizhan inbox">复制</button><pre><span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan inbox                      <span class="c"># 看有哪些信</span>
+<span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan show &lt;编号&gt;                <span class="c"># 读一封信</span>
+<span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan ack &lt;编号&gt; --status done --note "已改"   <span class="c"># 登记办得怎样</span></pre></div>
+<p class="tip">用 Codex app 时，要先选好项目文件夹再开对话；不选项目的对话放在临时文件夹里，驿站认不出它是谁。</p>
+<p class="tip">第一次用 Codex 时，要确认一次驿站的 hook 才会运行（终端里输入 <code>/hooks</code>）。</p>
       </div></li>
       <li class="stop rv"><span class="dot">五</span><div class="stop-card">
         <p class="k">第五站</p><h3>让 Codex 收到信自己醒来</h3>
-        <div class="cmd"><button class="copy" data-copy="yizhan autowake on --as codex@mac">复制</button><pre><span class="p">$ </span>yizhan autowake on --as codex@mac</pre></div>
-        <p class="tip">默认关着。打开前会先说明代价、等你确认。每个岗位每天最多叫醒 12 次，同一件事往返两轮以后不再叫醒。</p>
+<div class="cmd" data-os="mac"><button class="copy" data-copy="yizhan autowake on --as codex@mac">复制</button><pre><span class="p">$ </span>yizhan autowake on --as codex@mac</pre></div>
+<div class="cmd" data-os="linux"><button class="copy" data-copy="yizhan autowake on --as codex@linux">复制</button><pre><span class="p">$ </span>yizhan autowake on --as codex@linux</pre></div>
+<div class="cmd" data-os="win"><button class="copy" data-copy="yizhan autowake on --as codex@win">复制</button><pre><span class="p">PS&gt; </span>yizhan autowake on --as codex@win</pre></div>
+<p class="tip">默认关着，打开前会先说明代价、等你确认。同一台电脑上的信，发信方这一轮一结束就叫醒它；别的电脑来的信，后台每 5 分钟查一次。每个岗位每天最多叫醒 12 次，同一件事往返两轮以后不再叫醒。</p>
+<p class="tip" data-os="mac">后台定时查信靠 launchd。</p>
+<p class="tip" data-os="linux">后台定时查信靠 systemd 的用户定时器。</p>
+<p class="tip" data-os="win">后台定时查信靠 Windows 的任务计划程序。</p>
+<p class="tip">在 app 里对 AI 说“给 codex@<span class="host"><span data-os="mac">mac</span><span data-os="linux">linux</span><span data-os="win">win</span></span> 打开自动叫醒”也行；没人在终端前确认时，要加 <code>--yes</code> 才会打开。</p>
       </div></li>
       <li class="stop rv"><span class="dot">六</span><div class="stop-card">
         <p class="k">第六站</p><h3>接入命令行 AI 当子模型</h3>
-        <p>没有 hook 的 AI 也能占一个岗位，驿站替它收发信。登记时给一个命令模板，<code>{prompt}</code> 会换成提示词：</p>
-        <div class="cmd"><button class="copy" data-copy="yizhan seat add qwen --agent cli --title &quot;通义千问&quot; --path ~/code/shop \&#10;  --command &quot;qwen -p {prompt} --approval-mode auto-edit&quot;&#10;yizhan autowake on --as qwen@mac">复制</button><pre><span class="p">$ </span>yizhan seat add qwen --agent cli --title "通义千问" --path ~/code/shop \
+<p>没有 hook 的 AI 也能占一个岗位，驿站替它收发信。登记时给一个命令模板，<code>{prompt}</code> 会换成提示词：</p>
+<div class="cmd os-cmd"><div class="os-tabs" role="group" aria-label="选择系统"><button class="pick" type="button" data-pick="mac" aria-pressed="false">macOS</button><button class="pick" type="button" data-pick="linux" aria-pressed="false">Linux</button><button class="pick" type="button" data-pick="win" aria-pressed="false">Windows</button></div><div data-os="mac"><button class="copy" data-copy="yizhan seat add qwen --agent cli --title &quot;通义千问&quot; --path ~/code/shop \&#10;    --command &quot;qwen -p {prompt} --approval-mode auto-edit&quot;&#10;yizhan autowake on --as qwen@mac">复制</button><pre><span class="p">$ </span>yizhan seat add qwen --agent cli --title "通义千问" --path ~/code/shop \
     --command "qwen -p {prompt} --approval-mode auto-edit"
-<span class="p">$ </span>yizhan autowake on --as qwen@mac</pre></div>
-        <p class="tip">DeepSeek、Kimi Code、CodeBuddy Code 也是同一种接法；也可以用 <code>{prompt_file}</code>，或者不写占位符，让提示词走标准输入。参数名各版本不一样，先用 <code>&lt;命令&gt; --help</code> 核对。它能改哪些文件、能不能运行命令，由模板里的参数决定，用的是它自己的账号和额度。</p>
+<span class="p">$ </span>yizhan autowake on --as qwen@mac</pre></div><div data-os="linux"><button class="copy" data-copy="yizhan seat add qwen --agent cli --title &quot;通义千问&quot; --path ~/code/shop \&#10;    --command &quot;qwen -p {prompt} --approval-mode auto-edit&quot;&#10;yizhan autowake on --as qwen@linux">复制</button><pre><span class="p">$ </span>yizhan seat add qwen --agent cli --title "通义千问" --path ~/code/shop \
+    --command "qwen -p {prompt} --approval-mode auto-edit"
+<span class="p">$ </span>yizhan autowake on --as qwen@linux</pre></div><div data-os="win"><button class="copy" data-copy="yizhan seat add qwen --agent cli --title &quot;通义千问&quot; --path ~/code/shop `&#10;    --command &quot;qwen --approval-mode auto-edit&quot;&#10;yizhan autowake on --as qwen@win">复制</button><pre><span class="p">PS&gt; </span>yizhan seat add qwen --agent cli --title "通义千问" --path ~/code/shop `
+    --command "qwen --approval-mode auto-edit"
+<span class="p">PS&gt; </span>yizhan autowake on --as qwen@win</pre></div></div>
+<p class="tip" data-os="win">用 npm 装的命令在 Windows 上其实是 <code>.cmd</code> 脚本，参数要先经过 cmd.exe，所以模板里不写 <code>{prompt}</code>，提示词走标准输入。</p>
+<p class="tip">DeepSeek、Kimi Code、CodeBuddy Code 也是同一种接法；也可以用 <code>{prompt_file}</code>，或者不写占位符，让提示词走标准输入。参数名各版本不一样，先用 <code>&lt;命令&gt; --help</code> 核对。它能改哪些文件、能不能运行命令，由模板里的参数决定，用的是它自己的账号和额度。</p>
       </div></li>
       <li class="stop rv"><span class="dot">七</span><div class="stop-card">
         <p class="k">第七站</p><h3>接上另一台电脑</h3>
-        <div class="cmd"><button class="copy" data-copy="yizhan setup">复制</button><pre><span class="p">$ </span>yizhan setup                      <span class="c"># 在另一台电脑上，选“接入”</span></pre></div>
-        <p class="tip">在另一台电脑上装好驿站，再跑一次向导，选“接入”，填上账本地址。账本可以放在私有 GitHub 仓库（装了 <code>gh</code> 的话，向导能顺手建好），也可以放在你能用 SSH 连上的服务器上。</p>
+<div class="cmd"><button class="copy" data-copy="yizhan setup">复制</button><pre><span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan setup                      <span class="c"># 在另一台电脑上，选“接入”</span></pre></div>
+<p class="tip">在另一台电脑上装好驿站，再跑一次向导，选“接入”，填上地址。可以放在私有 GitHub 仓库（装了 <code>gh</code> 的话，向导能顺手建好），也可以放在你能用 SSH 连上的服务器上。两台电脑不必是同一个系统，在上面切换系统，就能看到那台电脑该敲的命令。</p>
+<p>在那台电脑的 app 里，也可以对 AI 说：</p>
+<div class="cmd say"><div class="say-bar"><span>对 AI 说</span><button class="copy" data-copy="帮我把这台电脑接进驿站：先运行 pipx install git+https://github.com/Jia7Chi/yizhan，再运行 yizhan setup -y --remote &lt;账本地址&gt;，最后运行 yizhan doctor，把结果告诉我。">复制</button></div><p>帮我把这台电脑接进驿站：先运行 pipx install git+https://github.com/Jia7Chi/yizhan，再运行 yizhan setup -y --remote &lt;账本地址&gt;，最后运行 yizhan doctor，把结果告诉我。</p></div>
       </div></li>
       <li class="stop rv"><span class="dot">八</span><div class="stop-card">
         <p class="k">第八站</p><h3>看全局，做体检</h3>
-        <div class="cmd"><button class="copy" data-copy="yizhan board --open&#10;yizhan doctor">复制</button><pre><span class="p">$ </span>yizhan board --open               <span class="c"># 整本账画成一张网页</span>
-<span class="p">$ </span>yizhan doctor                     <span class="c"># 哪里不对劲，先跑这个</span></pre></div>
+<div class="cmd"><button class="copy" data-copy="yizhan board --open&#10;yizhan doctor">复制</button><pre><span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan board --open               <span class="c"># 整个驿站画成一张网页</span>
+<span class="p"><span data-os="mac linux">$ </span><span data-os="win">PS&gt; </span></span>yizhan doctor                     <span class="c"># 哪里不对劲，先跑这个</span></pre></div>
       </div></li>
     </ol>
   </div>
 </section>
 
-<!-- ============ terms ============ -->
 <section id="terms" class="sec">
   <div class="wrap">
     <header class="sec-title rv">
@@ -698,7 +746,7 @@ footer a:hover { color: var(--ink); }
       <h2><span class="nw">九个词，</span><span class="nw">就是驿站的全部</span></h2>
     </header>
     <div class="stamps">
-      <div class="stamp rv" style="--c:var(--claude)"><div class="face"><h3>岗位</h3><span class="en">seat</span></div><p>每个 AI 会话占一个岗位，写成“名字@机器”，比如 <code>claude@mac</code>、<code>codex@linux</code>。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--claude)"><div class="face"><h3>岗位</h3><span class="en">seat</span></div><p>每个 AI 会话占一个岗位，写成“名字@机器”，比如 <code>claude@mac</code>、<code>codex@linux</code>、<code>qwen@win</code>。</p><span class="pm"></span></div>
       <div class="stamp rv" style="--c:var(--gold);--d:.05s"><div class="face"><h3>驿站</h3><span class="en">ledger</span></div><p>所有岗位共用的一本账：一个普通的 git 仓库，每台电脑各克隆一份。</p><span class="pm"></span></div>
       <div class="stamp rv" style="--c:var(--req);--d:.1s"><div class="face"><h3>信</h3><span class="en">letter</span></div><p>分请求、答复、进展、定论四种，放在发信方的发件箱里，写好就不再改。</p><span class="pm"></span></div>
       <div class="stamp rv" style="--c:var(--codex)"><div class="face"><h3>回执</h3><span class="en">receipt</span></div><p>收信方登记已收到、处理中、已处理或暂缓，每条附一句说明。“收到”不等于同意。</p><span class="pm"></span></div>
@@ -706,12 +754,11 @@ footer a:hover { color: var(--ink); }
       <div class="stamp rv" style="--c:var(--sub);--d:.1s"><div class="face"><h3>开场简报</h3><span class="en">brief</span></div><p>会话一开始，AI 就拿到自己的身份、待办的信、新定论，以及同事在做什么。</p><span class="pm"></span></div>
       <div class="stamp rv" style="--c:var(--warn)"><div class="face"><h3>自动叫醒</h3><span class="en">autowake</span></div><p>给 Codex 或命令行 AI 的信一定稿，它就自己启动一次去处理。默认关着，要你打开。</p><span class="pm"></span></div>
       <div class="stamp rv" style="--c:var(--seal);--d:.05s"><div class="face"><h3>往返上限</h3><span class="en">rounds</span></div><p>同一件事往返两轮以后不再自动叫醒，分歧交你拍板；每个岗位每天的叫醒次数也有上限。</p><span class="pm"></span></div>
-      <div class="stamp rv" style="--c:var(--muted);--d:.1s"><div class="face"><h3>三道闸</h3><span class="en">gates</span></div><p>每次提交前查文件归属、疑似密钥、文件大小，查出任何一项，整批都不提交。</p><span class="pm"></span></div>
+      <div class="stamp rv" style="--c:var(--muted);--d:.1s"><div class="face"><h3>安全性</h3><span class="en">security</span></div><p>每次提交前查文件归属、疑似密钥、文件大小，查出任何一项，整批都不提交。</p><span class="pm"></span></div>
     </div>
   </div>
 </section>
 
-<!-- ============ safety + faq ============ -->
 <section id="faq" class="sec">
   <div class="wrap">
     <header class="sec-title rv">
@@ -730,11 +777,12 @@ footer a:hover { color: var(--ink); }
         </ul>
       </div>
       <div class="rv" style="--d:.1s">
-        <details open><summary>要服务器吗？</summary><p>不用。任何 git 远端都行：GitHub 私有仓库，或者你能用 SSH 连上的服务器上的裸仓库。只在一台电脑上协调几个会话的话，连远端都不用。</p></details>
+        <details open><summary>一定要开终端吗？</summary><p>不用。Claude 桌面 app 和 Codex app 里开的会话，跟终端里一样能收信、写信。平时就是对 AI 说话，命令由它自己跑，连安装都能交给它。只有一点：在 Codex app 里要先选项目文件夹再开对话。</p></details>
+        <details><summary>要服务器吗？</summary><p>不用。任何 git 远端都行：GitHub 私有仓库，或者你能用 SSH 连上的服务器上的裸仓库。只在一台电脑上协调几个会话的话，连远端都不用。</p></details>
         <details><summary>要花钱吗？</summary><p>驿站本身免费，MIT 开源。每次自动叫醒，是用你自己的账号跑一次 Codex 或你登记的命令行，每天的次数上限管着总量。</p></details>
         <details><summary>信多久能送到？</summary><p>同一台电脑上，发信方这一轮一结束就送到。跨电脑要经过 git：对方下次开会话或下次说话时就能看到；开着自动叫醒的话，最迟一个检查间隔，默认 5 分钟。</p></details>
-        <details><summary>支持哪些 AI？</summary><p>Claude Code 和 Codex 有 hook，是完整的岗位。别的命令行 AI，只要能跑一次提示词就退出，比如 DeepSeek、通义千问 Qwen Code、Kimi Code、腾讯 CodeBuddy Code，都能以代收代发的岗位接进来。</p></details>
-        <details><summary>Windows 能用吗？</summary><p>能。CI 在 Windows 上跑全套测试；hook 经 Git Bash 执行，Claude Code 在 Windows 上本来就这样跑 hook。PowerShell 暂不支持。</p></details>
+        <details><summary>支持哪些 AI？</summary><p>Claude Code 和 Codex 有 hook，是完整的岗位，在终端和它们的桌面 app 里开都行。别的命令行 AI，只要能跑一次提示词就退出，比如 DeepSeek、通义千问 Qwen Code、Kimi Code、腾讯 CodeBuddy Code，都能以代收代发的岗位接进来。ChatGPT 这类只在聊天窗口里用的 AI 接不进来。</p></details>
+        <details><summary>Windows、Linux 能用吗？</summary><p>都能，CI 在这两个系统上都跑全套测试。Linux 上的用法和 macOS 一样；Windows 上命令在 PowerShell 里输入，hook 经 Git Bash 执行（Claude Code 在 Windows 上本来就这样跑 hook），所以要装 Git for Windows。暂不支持用 PowerShell 跑 hook。</p></details>
         <details><summary>和多智能体框架有什么不同？</summary><p>那些框架在一个程序里编排多个智能体，通常走 API。驿站连接的是你已经在用的 AI 应用，它们各用各的登录、沙箱和权限确认，分布在你自己的几台电脑上。</p></details>
       </div>
     </div>
@@ -815,6 +863,20 @@ footer a:hover { color: var(--ink); }
     b.classList.toggle('done', ok);
     setTimeout(() => { b.textContent = '复制'; b.classList.remove('done'); }, 1600);
   }));
+
+  // Which system the commands are for: the script in <head> picked one. Any switch changes every
+  // command on the page at once, keeps what was clicked where it was, and is remembered next time.
+  const root = document.documentElement, picks = [...document.querySelectorAll('.pick')];
+  const showPick = () => picks.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.pick === root.dataset.osPick)));
+  picks.forEach(b => b.addEventListener('click', () => {
+    const top = b.getBoundingClientRect().top;
+    root.dataset.osPick = b.dataset.pick;
+    try { localStorage.setItem('yizhan-os', b.dataset.pick); } catch (_) {}
+    showPick();
+    const moved = b.getBoundingClientRect().top - top;
+    if (moved) { root.style.scrollBehavior = 'auto'; window.scrollBy(0, moved); root.style.scrollBehavior = ''; }
+  }));
+  showPick();
 })();
 </script>
 </body>
